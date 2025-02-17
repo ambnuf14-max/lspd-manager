@@ -72,6 +72,7 @@ python -m bot.bot
 ```
 
 ### Структура
+```
 discord-bot/
 ├── bot/
 │   ├── __init__.py
