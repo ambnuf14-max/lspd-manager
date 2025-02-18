@@ -1,4 +1,6 @@
+import json
 import traceback
+from datetime import datetime
 
 import discord
 
@@ -76,11 +78,11 @@ class FeedbackModal(discord.ui.Modal, title='Получение роли'):
 
         message = await channel.send(embed=embed, view=view)
 
-        # async with db_pool.acquire() as conn:
-        #     await conn.execute(
-        #         "INSERT INTO requests (message_id, user_id, embed, status) VALUES ($1, $2, $3, $4)",
-        #         message.id, self.user.id, json.dumps(embed.to_dict()), "pending"
-        #     )
+        async with interaction.client.db_pool.acquire() as conn:
+         await conn.execute(
+             "INSERT INTO requests (message_id, user_id, embed, status, created_at) VALUES ($1, $2, $3, $4, $5)",
+             message.id, self.user.id, json.dumps(embed.to_dict()), "pending", datetime.now()
+         )
 
         await interaction.response.send_message(f'Скоро вы получите свои роли, {self.user.mention}!', ephemeral=True)
 
@@ -114,11 +116,15 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
         self.view.clear_items()  # Удаляем все кнопки из View
         await interaction.message.edit(embed=self.embed, view=self.view)  # Обновляем сообщение
 
-        # async with db_pool.acquire() as conn:
-        #     await conn.execute(
-        #         "UPDATE requests SET status = 'rejected' WHERE message_id = $1",
-        #         interaction.message.id
-        #     )
+        async with interaction.client.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE requests SET status = 'rejected', finished_by = $1, finished_at = $2, reject_reason = $3"
+                " WHERE message_id = $4",
+                interaction.user.id,
+                datetime.now(),
+                self.reason.value,
+                interaction.message.id
+            )
 
         # Отправляем сообщение пользователю
         try:
@@ -172,11 +178,13 @@ class DoneButton(discord.ui.Button):
         self.view.clear_items()  # Удаляем все кнопки из View
         await interaction.message.edit(embed=self.embed, view=self.view)  # Обновляем сообщение
 
-        # async with db_pool.acquire() as conn:
-        #     await conn.execute(
-        #         "UPDATE requests SET status = 'approved' WHERE message_id = $1",
-        #         interaction.message.id
-        #     )
+        async with interaction.client.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE requests SET status = 'approved', finished_by = $1, finished_at = $2 WHERE message_id = $3",
+                interaction.user.id,
+                datetime.now(),
+                interaction.message.id
+            )
 
         try:
             await self.user.send(f"Ваш запрос на получение ролей был одобрен.")

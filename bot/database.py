@@ -1,7 +1,6 @@
 import asyncpg
 
 DATABASE_URL = "postgresql://bot_user:securepassword@localhost:5432/discord_bot"
-db_pool = None
 
 
 async def create_db_pool():
@@ -24,8 +23,10 @@ async def setup_db(bot):
                 message_id BIGINT PRIMARY KEY,
                 user_id BIGINT NOT NULL,
                 embed JSONB NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending'
+                status TEXT NOT NULL DEFAULT 'pending',
+                finished_by BIGINT,
+                created_at TIMESTAMP WITHOUT TIME ZONE,
+                finished_at TIMESTAMP WITHOUT TIME ZONE,
+                reject_reason TEXT
             )
         """)
-
-    return db_pool

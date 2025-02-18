@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import traceback  # Для вывода полной информации об исключениях
 
 import discord
@@ -7,18 +8,30 @@ from discord.ext import commands
 
 from bot.config import TOKEN, GUILD, ADM_ROLES_CH, CL_REQUEST_CH
 from bot.database import setup_db
+from cogs.search import SearchCog
 from events.on_error import setup_on_error
 from events.on_ready import setup_on_ready
 from models.roles_request import PersistentView, ButtonView
 
 intents = discord.Intents.all()  # Подключаем "Разрешения"
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), application_id='1341133822984454225')
+
+async def load_extensions():
+    for filename in os.listdir("./cogs"):
+        if filename.endswith(".py") and not filename.__contains__("__init__"):
+            # cut off the .py from the file name
+            await bot.load_extension(f"cogs.{filename[:-3]}")
 
 async def run_bot():
     await setup_db(bot)
 
     await setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH, GUILD)
     await setup_on_error(bot)
+
+    print("Загружаем коги.")
+    await load_extensions()
+    print("Коги загружены.")
+
 
     print("Запуск бота...")
     try:
