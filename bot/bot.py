@@ -6,7 +6,7 @@ import traceback  # Для вывода полной информации об �
 import discord
 from discord.ext import commands
 
-from bot.config import TOKEN, GUILD, ADM_ROLES_CH, CL_REQUEST_CH
+from bot.config import TOKEN, GUILD, ADM_ROLES_CH, CL_REQUEST_CH, APPLICATION_ID
 from bot.database import setup_db
 from cogs.search import SearchCog
 from events.on_error import setup_on_error
@@ -14,7 +14,7 @@ from events.on_ready import setup_on_ready
 from models.roles_request import PersistentView, ButtonView
 
 intents = discord.Intents.all()  # Подключаем "Разрешения"
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), application_id='1341133822984454225')
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), application_id=APPLICATION_ID)
 
 async def load_extensions():
     for filename in os.listdir("./cogs"):

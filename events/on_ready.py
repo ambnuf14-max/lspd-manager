@@ -16,12 +16,12 @@ async def setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH, GUILD):
 
         adm_channel = bot.get_channel(ADM_ROLES_CH)
         if adm_channel is None:
-            print(f"Канал с ID {ADM_ROLES_CH} не найден!")
+            print(f"Админ канал с ID {ADM_ROLES_CH} не найден!")
             return
 
         client_channel = bot.get_channel(CL_REQUEST_CH)
         if client_channel is None:
-            print(f"Канал с ID {CL_REQUEST_CH} не найден!")
+            print(f"Админ канал с ID {CL_REQUEST_CH} не найден!")
             return
 
         print("Подключение к базе данных...")

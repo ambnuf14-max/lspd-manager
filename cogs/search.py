@@ -23,7 +23,7 @@ class SearchCog(commands.Cog):
 
     @app_commands.command(name="search", description="Поиск запросов пользователя")
     @app_commands.describe(member="Пользователь, которого нужно найти")
-    @app_commands.checks.has_role("Mod")
+    @app_commands.checks.has_role("Discord Administrator")
     async def search(self, interaction: discord.Interaction, member: discord.Member = None):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
@@ -89,7 +89,7 @@ class SearchCog(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_available(self, guild: discord.Guild):
         """Автоматическая регистрация слэш-команд при старте бота"""
-        self.bot.tree.clear_commands(guild=guild)
+        # self.bot.tree.clear_commands(guild=guild)
         self.bot.tree.add_command(self.search, guild=guild)
         await self.bot.tree.sync(guild=guild)
         print(f"Slash commands synced for {guild.name}")

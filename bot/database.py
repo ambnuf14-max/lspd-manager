@@ -30,3 +30,13 @@ async def setup_db(bot):
                 reject_reason TEXT
             )
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS queue (
+                queue_id SERIAL PRIMARY KEY,
+                probationary_id BIGINT,
+                officer_id BIGINT,
+                display_name TEXT,
+                created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                finished_at TIMESTAMP WITHOUT TIME ZONE
+            )
+        """)

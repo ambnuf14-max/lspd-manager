@@ -1,0 +1,12 @@
+/discord.log
+/.idea/modules.xml
+/main.py
+/.idea/inspectionProfiles/profiles_settings.xml
+/test.py
+/.idea/inspectionProfiles/Project_Default.xml
+/.idea/encodings.xml
+/bot/.env
+/bot_db.py
+/.idea/misc.xml
+/.idea/vcs.xml
+/.idea/discord_bot.iml
