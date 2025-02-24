@@ -204,14 +204,14 @@ class EnterQueue(discord.ui.Button):
                     try:
                         await intern_user.send(
                             f"🎉 Вы нашли FTO: <@{interaction.user.id}> ({interaction.user.display_name})!")
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"Модуль FTO Search: Ошибка при отправке уведомления: {e}")
 
                 try:
                     await interaction.user.send(
                         f"🎉 Вы нашли стажёра: <@{intern_entry['probationary_id']}> ({intern_entry['display_name']})!")
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Модуль FTO Search: Ошибка при отправке уведомления: {e}")
                 await interaction.response.edit_message(embed=embed)
 
                 # await interaction.edit_original_response(embed=embed)
@@ -246,14 +246,14 @@ class EnterQueue(discord.ui.Button):
                 fto_user = interaction.guild.get_member(fto_entry['officer_id'])
                 if fto_user:
                     try:
-                        await fto_user.send(f"🎉 Вы нашли стажёра: {interaction.user.display_name}!")
-                    except:
-                        pass
+                        await fto_user.send(f"🎉 Вы нашли стажёра: <@{interaction.user.id}> ({interaction.user.display_name})!")
+                    except Exception as e:
+                        print(f"Модуль FTO Search: Ошибка при отправке уведомления: {e}")
 
                 try:
-                    await interaction.user.send(f"🎉 Вы нашли FTO: {fto_entry['display_name']}!")
-                except:
-                    pass
+                    await interaction.user.send(f"🎉 Вы нашли FTO: <@{fto_entry['officer_id']}> ({fto_entry['display_name']})!")
+                except Exception as e:
+                    print(f"Модуль FTO Search: Ошибка при отправке уведомления: {e}")
 
                 await interaction.response.edit_message(embed=embed)
                 # await interaction.edit_original_response(embed=embed)
