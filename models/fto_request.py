@@ -21,7 +21,7 @@ class FTOView(discord.ui.View):
             async with self.bot.db_pool.acquire() as conn:
                 # Находим записи, которые находятся в очереди дольше 3 часов
                 expired_entries = await conn.fetch(
-                    "SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - INTERVAL '1 minute'"
+                    "SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - INTERVAL '3 hours'"
                 )
 
                 for entry in expired_entries:
