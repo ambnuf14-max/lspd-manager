@@ -16,7 +16,7 @@ class FTOCog(commands.Cog):
         print("FTO Cog loaded")
 
     @app_commands.command(name="fto", description="Отправить сообщение об очереди ФТО")
-    @app_commands.checks.has_role("Mod")
+    @app_commands.checks.has_role("Discord Administrator")
     async def fto(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
 

@@ -103,8 +103,8 @@ class EnterQueue(discord.ui.Button):
             channel_id = interaction.channel.id
             message_id = interaction.message.id
 
-            fto_role = discord.utils.find(lambda r: r.name == "FTO Officer", interaction.guild.roles)
-            intern_role = discord.utils.find(lambda r: r.name == "Probationary Officer", interaction.guild.roles)
+            fto_role = discord.utils.find(lambda r: r.name == "OO: Field Training Officer", interaction.guild.roles)
+            intern_role = discord.utils.find(lambda r: r.name == "Police Officer I", interaction.guild.roles)
 
             if fto_role not in interaction.user.roles and intern_role not in interaction.user.roles:
                 await interaction.response.send_message("❌ Вы не являетесь офицером полевой подготовки либо стажером.",
