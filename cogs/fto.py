@@ -22,6 +22,8 @@ class FTOCog(commands.Cog):
 
         try:
             embed = discord.Embed(title="FTO Search")
+            embed.set_thumbnail(url="https://i.imgur.com/89q0Cdj.png")
+            embed.set_image(url="https://i.imgur.com/rZvJhyw.png")
             embed.add_field(
                 name="",
                 value="Этот модуль предназначен для поиска наставника или стажера. Выбрав соответствующий "
@@ -58,7 +60,7 @@ class FTOCog(commands.Cog):
             )
             traceback.print_exception(
                 type(error), error, error.__traceback__
-            )  # Логируем ошибку
+            )
 
     @commands.Cog.listener()
     async def on_guild_available(self, guild: discord.Guild):

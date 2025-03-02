@@ -19,7 +19,7 @@ async def update_roles(bot):
         creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_KEYFILE, scope)
         client = gspread.authorize(creds)
         sheet = client.open(SHEET_NAME).worksheet("Таблица состава")
-        data = sheet.get_all_values()  # Получаем все данные с основного листа
+        data = sheet.get_all_values()
 
         guild = bot.get_guild(config.GUILD.id)
         if guild is None:
@@ -34,9 +34,8 @@ async def update_roles(bot):
             for i, row in enumerate(data):
                 discord_username = row[
                     20
-                ]  # Предположим, что никнейм Discord находится во втором столбце (индекс 1)
-                if discord_username == str(member):  # Сравниваем никнейм
-                    # Формируем комментарий с ролями
+                ]  # Предположим, что никнейм Discord находится во 21 столбце (индекс 20)
+                if discord_username == str(member):
                     roles = [
                         role.name for role in member.roles if role.name != "@everyone"
                     ]
@@ -56,7 +55,7 @@ async def update_roles(bot):
                                         "values": [
                                             {
                                                 "userEnteredValue": {"stringValue": "+"},
-                                                "note": comment,  # Комментарий
+                                                "note": comment,
                                             }
                                         ]
                                     }
@@ -80,23 +79,19 @@ async def update_roles(bot):
 
 async def update_roles_comment(member: Member):
     try:
-        # Авторизация в Google Sheets
         creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_KEYFILE, scope)
         client = gspread.authorize(creds)
 
-        # Открываем основной лист
         main_sheet = client.open(SHEET_NAME).worksheet(
             "Таблица состава"
-        )  # Замените на имя вашего листа
-        main_data = main_sheet.get_all_values()  # Получаем все данные с основного листа
+        )
+        main_data = main_sheet.get_all_values()
 
-        # Ищем строку с пользователем
         for i, row in enumerate(main_data):
             discord_username = row[
                 20
-            ]  # Предположим, что никнейм Discord находится во втором столбце (индекс 1)
-            if discord_username == str(member):  # Сравниваем никнейм
-                # Формируем комментарий с ролями
+            ]  # Предположим, что никнейм Discord находится во 21 столбце (индекс 20)
+            if discord_username == str(member):
                 roles = [role.name for role in member.roles if role.name != "@everyone"]
                 comment = "Роли:\n" + "\n".join(roles)
                 requests = {
@@ -113,7 +108,7 @@ async def update_roles_comment(member: Member):
                                 "values": [
                                     {
                                         "userEnteredValue": {"stringValue": "+"},
-                                        "note": comment,  # Комментарий
+                                        "note": comment,
                                     }
                                 ]
                             }

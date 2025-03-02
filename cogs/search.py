@@ -48,7 +48,7 @@ class SearchCog(commands.Cog):
                 title=f"📜 История запросов {member.display_name}",
                 color=discord.Color.blue(),
             )
-            embed.set_thumbnail(url=member.display_avatar.url)  # Аватар пользователя
+            embed.set_thumbnail(url=member.display_avatar.url)
 
             for row in rows:
                 message_id = row["message_id"]
@@ -66,10 +66,8 @@ class SearchCog(commands.Cog):
                 )
                 reject_reason = row["reject_reason"] if row["reject_reason"] else "—"
 
-                # Ссылка на сообщение
                 message_link = f"https://discord.com/channels/{interaction.guild.id}/{ADM_ROLES_CH}/{message_id}"
 
-                # Кто завершил (или "—" если ещё не завершено)
                 finished_by_mention = f"<@{finished_by}>" if finished_by else "—"
 
                 reason_text = (
@@ -93,7 +91,7 @@ class SearchCog(commands.Cog):
         except Exception as e:
             error_message = "❌ Ошибка при обработке запроса."
             await interaction.followup.send(error_message, ephemeral=True)
-            traceback.print_exception(type(e), e, e.__traceback__)  # Логируем ошибку
+            traceback.print_exception(type(e), e, e.__traceback__)
 
     @search.error
     async def search_error(self, interaction: discord.Interaction, error):
@@ -108,7 +106,7 @@ class SearchCog(commands.Cog):
             )
             traceback.print_exception(
                 type(error), error, error.__traceback__
-            )  # Логируем ошибку
+            )
 
     @commands.Cog.listener()
     async def on_guild_available(self, guild: discord.Guild):

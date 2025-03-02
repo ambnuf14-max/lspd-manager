@@ -9,11 +9,10 @@ from bot.config import ADM_ROLES_CH
 
 class PersistentView(discord.ui.View):
     def __init__(self, embed: discord.Embed, user: discord.User):
-        super().__init__(timeout=None)  # Делаем View постоянным
+        super().__init__(timeout=None)
         self.embed = embed
         self.user = user
 
-        # Добавляем кнопки с уникальными custom_id
         self.add_item(DoneButton(embed, user))
         self.add_item(DropButton(embed, user))
 
@@ -21,7 +20,7 @@ class PersistentView(discord.ui.View):
 class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.user = None  # Инициализируем атрибут пользователя
+        self.user = None
 
     info = discord.ui.TextInput(
         label="Информация!!!!",
@@ -56,7 +55,6 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     async def on_submit(self, interaction: discord.Interaction):
         channel = interaction.guild.get_channel(ADM_ROLES_CH)
 
-        # Создаем Embed
         embed = discord.Embed(
             title="Новый запрос",
             description=f"**От {self.user.mention}**\n\n"
@@ -69,11 +67,10 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
             color=discord.Color.yellow(),
         )
 
-        # Устанавливаем автора Embed с кликабельной ссылкой на пользователя
         embed.set_author(
-            name=self.user.display_name,  # Имя пользователя
-            icon_url=self.user.display_avatar.url,  # Аватар пользователя
-            url=f"https://discord.com/users/{self.user.id}",  # Ссылка на профиль пользователя
+            name=self.user.display_name,
+            icon_url=self.user.display_avatar.url,
+            url=f"https://discord.com/users/{self.user.id}",
         )
 
         view = PersistentView(embed, self.user)
@@ -119,17 +116,15 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Обновляем Embed
-        self.embed.color = discord.Color.red()  # Меняем цвет Embed на красный
+        self.embed.color = discord.Color.red()
         self.embed.set_footer(
             text=f"Отклонено пользователем {interaction.user.display_name}. Причина: {self.reason.value}"
         )
 
-        # Убираем кнопки
-        self.view.clear_items()  # Удаляем все кнопки из View
+        self.view.clear_items()
         await interaction.message.edit(
             embed=self.embed, view=self.view
-        )  # Обновляем сообщение
+        )
 
         async with interaction.client.db_pool.acquire() as conn:
             await conn.execute(
@@ -141,7 +136,6 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
                 interaction.message.id,
             )
 
-        # Отправляем сообщение пользователю
         try:
             await self.user.send(
                 f"Ваш запрос на получение ролей был отклонён. Причина: {self.reason.value}"
@@ -152,7 +146,6 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
                 ephemeral=True,
             )
 
-            # Подтверждение
         await interaction.response.send_message(
             f"Запрос от {self.user.display_name} отклонён!", ephemeral=True
         )
@@ -179,7 +172,7 @@ class ButtonView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         feedback_modal = FeedbackModal()
-        feedback_modal.user = interaction.user  # Устанавливаем пользователя
+        feedback_modal.user = interaction.user
         await interaction.response.send_modal(feedback_modal)
 
 
@@ -206,17 +199,15 @@ class DoneButton(discord.ui.Button):
         self.user = user
 
     async def callback(self, interaction: discord.Interaction):
-        # Обновляем Embed, чтобы показать, что запрос выполнен
-        self.embed.color = discord.Color.green()  # Меняем цвет Embed на зеленый
+        self.embed.color = discord.Color.green()
         self.embed.set_footer(
             text=f"Запрос выполнен пользователем {interaction.user.display_name}"
         )
 
-        # Убираем кнопку "Выполнено"
-        self.view.clear_items()  # Удаляем все кнопки из View
+        self.view.clear_items()
         await interaction.message.edit(
             embed=self.embed, view=self.view
-        )  # Обновляем сообщение
+        )
 
         async with interaction.client.db_pool.acquire() as conn:
             await conn.execute(
@@ -234,7 +225,6 @@ class DoneButton(discord.ui.Button):
                 ephemeral=True,
             )
 
-        # Отправляем подтверждение
         await interaction.response.send_message(
             f"Запрос от {self.user.display_name} выполнен!", ephemeral=True
         )

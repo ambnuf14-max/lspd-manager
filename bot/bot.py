@@ -12,7 +12,7 @@ from events.on_member_update import setup_on_member_update
 from events.on_ready import setup_on_ready
 
 activity = discord.Game(name="sa-es.su")
-intents = discord.Intents.all()  # Подключаем "Разрешения"
+intents = discord.Intents.all()
 bot = commands.Bot(
     command_prefix="!",
     intents=discord.Intents.all(),
