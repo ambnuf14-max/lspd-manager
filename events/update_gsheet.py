@@ -6,7 +6,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 from bot import config
 
-SHEET_NAME = "TEST"
+SHEET_NAME = "LSPD Faction by Moon"
 JSON_KEYFILE = "credentials.json"
 scope = [
     "https://spreadsheets.google.com/feeds",
@@ -40,7 +40,7 @@ async def update_roles(bot):
                     roles = [
                         role.name for role in member.roles if role.name != "@everyone"
                     ]
-                    comment = "Роли: " + ", ".join(roles)
+                    comment = "Роли:\n" + "\n".join(roles)
                     requests.append(
                         {
                             "updateCells": {
@@ -55,12 +55,13 @@ async def update_roles(bot):
                                     {
                                         "values": [
                                             {
+                                                "userEnteredValue": {"stringValue": "+"},
                                                 "note": comment,  # Комментарий
                                             }
                                         ]
                                     }
                                 ],
-                                "fields": "note",
+                                "fields": "userEnteredValue,note",
                             }
                         }
                     )
@@ -97,7 +98,7 @@ async def update_roles_comment(member: Member):
             if discord_username == str(member):  # Сравниваем никнейм
                 # Формируем комментарий с ролями
                 roles = [role.name for role in member.roles if role.name != "@everyone"]
-                comment = "Роли: " + ", ".join(roles)
+                comment = "Роли:\n" + "\n".join(roles)
                 requests = {
                     "updateCells": {
                         "range": {
@@ -111,17 +112,18 @@ async def update_roles_comment(member: Member):
                             {
                                 "values": [
                                     {
+                                        "userEnteredValue": {"stringValue": "+"},
                                         "note": comment,  # Комментарий
                                     }
                                 ]
                             }
                         ],
-                        "fields": "note",
+                        "fields": "userEnteredValue,note",
                     }
                 }
                 main_sheet.spreadsheet.batch_update({"requests": requests})
                 print(f"Комментарий для {member.name} обновлен.")
-                break
+                # break
     except Exception as e:
         print(f"Ошибка при обновлении комментария для {member.name}: {e}")
         traceback.print_exc()
