@@ -2,10 +2,10 @@ import json
 import traceback
 
 import discord
-from discord.ext import commands
 
-from bot.database import setup_db
+from events.update_gsheet import update_roles
 from models.roles_request import PersistentView, ButtonView
+
 
 async def setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH, GUILD):
     @bot.event
@@ -24,13 +24,19 @@ async def setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH, GUILD):
             print(f"Админ канал с ID {CL_REQUEST_CH} не найден!")
             return
 
+        print("Обновляем роли в таблице.")
+        await update_roles(bot)
+        print("Завершили обновление ролей.")
+
         print("Подключение к базе данных...")
         try:
             async with bot.db_pool.acquire() as conn:
                 print("Установка кодировки UTF8...")
                 await conn.execute("SET client_encoding = 'UTF8'")
                 print("Выполнение SELECT запроса...")
-                rows = await conn.fetch("SELECT message_id, user_id, embed FROM requests WHERE status = 'pending'")
+                rows = await conn.fetch(
+                    "SELECT message_id, user_id, embed FROM requests WHERE status = 'pending'"
+                )
                 print(f"Запрос выполнен, получено {len(rows)} строк.")
         except Exception as e:
             print(f"Ошибка при работе с базой данных: {e}")
@@ -72,7 +78,9 @@ async def setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH, GUILD):
 
         try:
             view = ButtonView()
-            await client_channel.send("Нажмите кнопку ниже, чтобы получить роли:", view=view)
+            await client_channel.send(
+                "Нажмите кнопку ниже, чтобы получить роли:", view=view
+            )
         except Exception as e:
             print(f"Ошибка при отправке сообщения с кнопкой: {e}")
             traceback.print_exc()

@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 from bot.config import ADM_ROLES_CH
 
+
 class SearchCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -17,14 +18,16 @@ class SearchCog(commands.Cog):
     async def sync(self, ctx) -> None:
         if ctx.author.guild_permissions.administrator:
             fmt = await ctx.bot.tree.sync(guild=ctx.guild)
-            await ctx.send(f'Synced {len(fmt)} commands.')
+            await ctx.send(f"Synced {len(fmt)} commands.")
         else:
             await ctx.send("❌ У вас нет прав для выполнения этой команды.")
 
     @app_commands.command(name="search", description="Поиск запросов пользователя")
     @app_commands.describe(member="Пользователь, которого нужно найти")
     @app_commands.checks.has_role("Discord Administrator")
-    async def search(self, interaction: discord.Interaction, member: discord.Member = None):
+    async def search(
+        self, interaction: discord.Interaction, member: discord.Member = None
+    ):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
@@ -32,16 +35,18 @@ class SearchCog(commands.Cog):
                 rows = await conn.fetch(
                     "SELECT message_id, status, finished_by, created_at, finished_at, reject_reason FROM requests "
                     "WHERE user_id = $1",
-                    member.id
+                    member.id,
                 )
 
             if not rows:
-                await interaction.followup.send("❌ Запросов не найдено.", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ Запросов не найдено.", ephemeral=True
+                )
                 return
 
             embed = discord.Embed(
                 title=f"📜 История запросов {member.display_name}",
-                color=discord.Color.blue()
+                color=discord.Color.blue(),
             )
             embed.set_thumbnail(url=member.display_avatar.url)  # Аватар пользователя
 
@@ -49,8 +54,16 @@ class SearchCog(commands.Cog):
                 message_id = row["message_id"]
                 status = row["status"].capitalize()
                 finished_by = row["finished_by"]
-                created_at = row["created_at"].strftime("%d.%m.%Y %H:%M") if row["created_at"] else "—"
-                finished_at = row["finished_at"].strftime("%d.%m.%Y %H:%M") if row["finished_at"] else "⏳ В процессе"
+                created_at = (
+                    row["created_at"].strftime("%d.%m.%Y %H:%M")
+                    if row["created_at"]
+                    else "—"
+                )
+                finished_at = (
+                    row["finished_at"].strftime("%d.%m.%Y %H:%M")
+                    if row["finished_at"]
+                    else "⏳ В процессе"
+                )
                 reject_reason = row["reject_reason"] if row["reject_reason"] else "—"
 
                 # Ссылка на сообщение
@@ -59,16 +72,20 @@ class SearchCog(commands.Cog):
                 # Кто завершил (или "—" если ещё не завершено)
                 finished_by_mention = f"<@{finished_by}>" if finished_by else "—"
 
-                reason_text = f"\n**Причина отклонения:** {reject_reason}" if status.lower() == "rejected" else ""
+                reason_text = (
+                    f"\n**Причина отклонения:** {reject_reason}"
+                    if status.lower() == "rejected"
+                    else ""
+                )
 
                 embed.add_field(
                     name=f"🔹 [Запрос {message_id}] ({message_link})",
                     value=f"**Статус:** {status}\n"
-                          f"**Создан:** {created_at}\n"
-                          f"**Завершён:** {finished_at}\n"
-                          f"**Завершил:** {finished_by_mention}"
-                          f"{reason_text}",
-                    inline=False
+                    f"**Создан:** {created_at}\n"
+                    f"**Завершён:** {finished_at}\n"
+                    f"**Завершил:** {finished_by_mention}"
+                    f"{reason_text}",
+                    inline=False,
                 )
 
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -81,10 +98,17 @@ class SearchCog(commands.Cog):
     @search.error
     async def search_error(self, interaction: discord.Interaction, error):
         if isinstance(error, app_commands.MissingRole):
-            await interaction.response.send_message("❌ У вас недостаточно прав для выполнения этой команды.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ У вас недостаточно прав для выполнения этой команды.",
+                ephemeral=True,
+            )
         else:
-            await interaction.response.send_message("❌ Произошла ошибка при выполнении команды.", ephemeral=True)
-            traceback.print_exception(type(error), error, error.__traceback__)  # Логируем ошибку
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при выполнении команды.", ephemeral=True
+            )
+            traceback.print_exception(
+                type(error), error, error.__traceback__
+            )  # Логируем ошибку
 
     @commands.Cog.listener()
     async def on_guild_available(self, guild: discord.Guild):

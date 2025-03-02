@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import traceback  # Для вывода полной информации об исключениях
 
@@ -8,13 +7,19 @@ from discord.ext import commands
 
 from bot.config import TOKEN, GUILD, ADM_ROLES_CH, CL_REQUEST_CH, APPLICATION_ID
 from bot.database import setup_db
-from cogs.search import SearchCog
 from events.on_error import setup_on_error
+from events.on_member_update import setup_on_member_update
 from events.on_ready import setup_on_ready
-from models.roles_request import PersistentView, ButtonView
 
+activity = discord.Game(name="making traffic stop")
 intents = discord.Intents.all()  # Подключаем "Разрешения"
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), application_id=APPLICATION_ID)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=discord.Intents.all(),
+    activity=activity,
+    application_id=APPLICATION_ID,
+)
+
 
 async def load_extensions():
     for filename in os.listdir("./cogs"):
@@ -22,16 +27,17 @@ async def load_extensions():
             # cut off the .py from the file name
             await bot.load_extension(f"cogs.{filename[:-3]}")
 
-async def run_bot():
+
+async def main():
     await setup_db(bot)
 
     await setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH, GUILD)
     await setup_on_error(bot)
+    await setup_on_member_update(bot)
 
     print("Загружаем коги.")
     await load_extensions()
     print("Коги загружены.")
-
 
     print("Запуск бота...")
     try:
@@ -40,5 +46,6 @@ async def run_bot():
         print(f"Ошибка при запуске бота: {e}")
         traceback.print_exc()
 
+
 if __name__ == "__main__":
-    asyncio.run(run_bot())
+    asyncio.run(main())

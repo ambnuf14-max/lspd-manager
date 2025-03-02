@@ -15,10 +15,13 @@ async def setup_db(bot):
             raise RuntimeError("Database setup failed!")
     except Exception as e:
         print(f"Database setup error: {e}")
-        bot.db_pool = None  # Ensure db_pool is explicitly set to None in case of failure
+        bot.db_pool = (
+            None  # Ensure db_pool is explicitly set to None in case of failure
+        )
     async with bot.db_pool.acquire() as conn:
         await conn.execute("SET client_encoding = 'UTF8'")
-        await conn.execute("""
+        await conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS requests (
                 message_id BIGINT PRIMARY KEY,
                 user_id BIGINT NOT NULL,
@@ -29,8 +32,10 @@ async def setup_db(bot):
                 finished_at TIMESTAMP WITHOUT TIME ZONE,
                 reject_reason TEXT
             )
-        """)
-        await conn.execute("""
+        """
+        )
+        await conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS queue (
                 queue_id SERIAL PRIMARY KEY,
                 probationary_id BIGINT,
@@ -39,4 +44,5 @@ async def setup_db(bot):
                 created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 finished_at TIMESTAMP WITHOUT TIME ZONE
             )
-        """)
+        """
+        )
