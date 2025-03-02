@@ -11,7 +11,7 @@ from events.on_error import setup_on_error
 from events.on_member_update import setup_on_member_update
 from events.on_ready import setup_on_ready
 
-activity = discord.Game(name="making traffic stop")
+activity = discord.Game(name="sa-es.su")
 intents = discord.Intents.all()  # Подключаем "Разрешения"
 bot = commands.Bot(
     command_prefix="!",
