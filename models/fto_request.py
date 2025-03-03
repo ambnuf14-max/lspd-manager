@@ -18,68 +18,74 @@ class FTOView(discord.ui.View):
 
     @tasks.loop(minutes=1)  # Задача запускается каждую минуту
     async def cleanup_task(self):
+        """Очистка устаревших записей из очереди."""
         try:
             async with self.bot.db_pool.acquire() as conn:
-                # Находим записи, которые находятся в очереди дольше 3 часов
-                expired_entries = await conn.fetch(
-                    "SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - INTERVAL '3 hours'"
-                )
-
+                expired_entries = await self.fetch_expired_entries(conn)
                 for entry in expired_entries:
-                    # Удаляем запись из очереди
-                    await conn.execute(
-                        "UPDATE queue SET finished_at = NOW() WHERE queue_id = $1",
-                        entry["queue_id"],
-                    )
-
-                    # Получаем канал и сообщение
-                    channel = self.bot.get_channel(channel_id)
-                    if channel:
-                        try:
-                            message = await channel.fetch_message(message_id)
-                            embed = message.embeds[0] if message.embeds else None
-
-                            if embed:
-                                # Удаляем пользователя из Embed
-                                field_name = (
-                                    "Свободные FTO"
-                                    if entry["officer_id"]
-                                    else "Стажеры в очереди"
-                                )
-                                await self.remove_user_from_embed(
-                                    embed, entry["display_name"], field_name
-                                )
-
-                                # Обновляем сообщение
-                                await message.edit(embed=embed)
-                        except discord.NotFound:
-                            print(f"Сообщение {entry['message_id']} не найдено.")
-                        except discord.Forbidden:
-                            print(
-                                f"Нет прав для редактирования сообщения {entry['message_id']}."
-                            )
-                        except Exception as e:
-                            print(f"Ошибка при обновлении сообщения: {e}")
-                    else:
-                        print(f"Канал {channel_id} не найден")
-                    # Отправляем уведомление пользователю
-                    user_id = (
-                        entry["officer_id"]
-                        if entry["officer_id"]
-                        else entry["probationary_id"]
-                    )
-                    user = self.bot.get_user(user_id)
-                    if user:
-                        try:
-                            await user.send(
-                                "❌ Вы были удалены из очереди, так как никто не нашёлся за 3 часа."
-                            )
-                        except Exception as e:
-                            print(f"Пользователь закрыл ЛС для бота. {e}")
-
+                    await self.process_expired_entry(conn, entry)
         except Exception as e:
             print(f"Ошибка в фоновой задаче: {e}")
             traceback.print_exc()
+
+    async def fetch_expired_entries(self, conn):
+        """Получение устаревших записей из базы данных."""
+        return await conn.fetch(
+            "SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - INTERVAL '3 hours'"
+        )
+
+    async def process_expired_entry(self, conn, entry):
+        """Обработка одной устаревшей записи."""
+        await self.mark_entry_as_finished(conn, entry)
+        await self.update_embed_for_expired_entry(entry)
+        await self.notify_user_about_expiration(entry)
+
+    async def update_embed_for_expired_entry(self, entry):
+        """Обновление Embed для устаревшей записи."""
+        channel = self.bot.get_channel(entry["channel_id"])
+        if not channel:
+            print(f"Канал {entry['channel_id']} не найден")
+            return
+
+        try:
+            message = await channel.fetch_message(entry["message_id"])
+            embed = message.embeds[0] if message.embeds else None
+
+            if embed:
+                field_name = (
+                    "Свободные FTO" if entry["officer_id"] else "Стажеры в очереди"
+                )
+                await self.remove_user_from_embed(
+                    embed, entry["display_name"], field_name
+                )
+                await message.edit(embed=embed)
+        except discord.NotFound:
+            print(f"Сообщение {entry['message_id']} не найдено.")
+        except discord.Forbidden:
+            print(f"Нет прав для редактирования сообщения {entry['message_id']}.")
+        except Exception as e:
+            print(f"Ошибка при обновлении сообщения: {e}")
+
+    async def notify_user_about_expiration(self, entry):
+        """Уведомление пользователя об истечении времени в очереди."""
+        user_id = entry["officer_id"] if entry["officer_id"] else entry["probationary_id"]
+        user = self.bot.get_user(user_id)
+        if not user:
+            return
+
+        try:
+            await user.send(
+                "❌ Вы были удалены из очереди, так как никто не нашёлся за 3 часа."
+            )
+        except Exception as e:
+            print(f"Пользователь закрыл ЛС для бота. {e}")
+
+    async def mark_entry_as_finished(self, conn, entry):
+        """Помечаем запись как завершённую в базе данных."""
+        await conn.execute(
+            "UPDATE queue SET finished_at = NOW() WHERE queue_id = $1",
+            entry["queue_id"],
+        )
 
     @cleanup_task.before_loop
     async def before_cleanup_task(self):

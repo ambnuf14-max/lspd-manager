@@ -140,7 +140,8 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
             )
         except discord.Forbidden:
             await interaction.followup.send(
-                f"Не удалось отправить сообщение пользователю {self.user.display_name}. Возможно, у него закрыты личные сообщения.",
+                f"Не удалось отправить сообщение пользователю {self.user.display_name}. Возможно, у него закрыты "
+                f"личные сообщения.",
                 ephemeral=True,
             )
 
@@ -217,7 +218,8 @@ class DoneButton(discord.ui.Button):
             await self.user.send("Ваш запрос на получение ролей был одобрен.")
         except discord.Forbidden:
             await interaction.followup.send(
-                f"Не удалось отправить сообщение пользователю {self.user.display_name}. Возможно, у него закрыты личные сообщения.",
+                f"Не удалось отправить сообщение пользователю {self.user.display_name}. Возможно, у него закрыты "
+                f"личные сообщения.",
                 ephemeral=True,
             )
 

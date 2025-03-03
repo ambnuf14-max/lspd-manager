@@ -5,7 +5,7 @@ import traceback  # Для вывода полной информации об �
 import discord
 from discord.ext import commands
 
-from bot.config import TOKEN, GUILD, ADM_ROLES_CH, CL_REQUEST_CH, APPLICATION_ID
+from bot.config import TOKEN, ADM_ROLES_CH, CL_REQUEST_CH, APPLICATION_ID
 from bot.database import setup_db
 from events.on_error import setup_on_error
 from events.on_member_update import setup_on_member_update
@@ -31,7 +31,7 @@ async def load_extensions():
 async def main():
     await setup_db(bot)
 
-    await setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH, GUILD)
+    await setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH)
     await setup_on_error(bot)
     await setup_on_member_update(bot)
 
