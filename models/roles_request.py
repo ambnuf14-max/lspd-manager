@@ -122,9 +122,7 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
         )
 
         self.view.clear_items()
-        await interaction.message.edit(
-            embed=self.embed, view=self.view
-        )
+        await interaction.message.edit(embed=self.embed, view=self.view)
 
         async with interaction.client.db_pool.acquire() as conn:
             await conn.execute(
@@ -205,9 +203,7 @@ class DoneButton(discord.ui.Button):
         )
 
         self.view.clear_items()
-        await interaction.message.edit(
-            embed=self.embed, view=self.view
-        )
+        await interaction.message.edit(embed=self.embed, view=self.view)
 
         async with interaction.client.db_pool.acquire() as conn:
             await conn.execute(

@@ -54,7 +54,9 @@ async def update_roles(bot):
                                     {
                                         "values": [
                                             {
-                                                "userEnteredValue": {"stringValue": "+"},
+                                                "userEnteredValue": {
+                                                    "stringValue": "+"
+                                                },
                                                 "note": comment,
                                             }
                                         ]
@@ -82,9 +84,7 @@ async def update_roles_comment(member: Member):
         creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_KEYFILE, scope)
         client = gspread.authorize(creds)
 
-        main_sheet = client.open(SHEET_NAME).worksheet(
-            "Таблица состава"
-        )
+        main_sheet = client.open(SHEET_NAME).worksheet("Таблица состава")
         main_data = main_sheet.get_all_values()
 
         for i, row in enumerate(main_data):

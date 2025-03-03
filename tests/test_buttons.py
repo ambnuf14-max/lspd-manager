@@ -56,6 +56,7 @@ async def test_done_button_callback(mock_datetime):
 
     user.send.assert_awaited_once_with("Ваш запрос на получение ролей был одобрен.")
 
+
 @pytest.mark.asyncio(loop_scope="function")
 @patch("models.roles_request.datetime")
 async def test_drop_button_callback(mock_datetime):
@@ -125,7 +126,9 @@ async def test_drop_button_callback(mock_datetime):
         interaction.message.id,
     )
 
-    user.send.assert_awaited_once_with(f"Ваш запрос на получение ролей был отклонён. Причина: {modal.reason.value}")
+    user.send.assert_awaited_once_with(
+        f"Ваш запрос на получение ролей был отклонён. Причина: {modal.reason.value}"
+    )
 
     interaction.response.send_message.assert_awaited_once_with(
         f"Запрос от {user.display_name} отклонён!", ephemeral=True

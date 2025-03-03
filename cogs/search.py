@@ -104,9 +104,7 @@ class SearchCog(commands.Cog):
             await interaction.response.send_message(
                 "❌ Произошла ошибка при выполнении команды.", ephemeral=True
             )
-            traceback.print_exception(
-                type(error), error, error.__traceback__
-            )
+            traceback.print_exception(type(error), error, error.__traceback__)
 
     @commands.Cog.listener()
     async def on_guild_available(self, guild: discord.Guild):

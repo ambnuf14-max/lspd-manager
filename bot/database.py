@@ -15,9 +15,7 @@ async def setup_db(bot):
             raise RuntimeError("Database setup failed!")
     except Exception as e:
         print(f"Database setup error: {e}")
-        bot.db_pool = (
-            None
-        )
+        bot.db_pool = None
     async with bot.db_pool.acquire() as conn:
         await conn.execute("SET client_encoding = 'UTF8'")
         await conn.execute(
