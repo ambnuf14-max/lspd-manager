@@ -28,7 +28,8 @@ class FTOView(discord.ui.View):
             print(f"Ошибка в фоновой задаче: {e}")
             traceback.print_exc()
 
-    async def fetch_expired_entries(self, conn):
+    @staticmethod
+    async def fetch_expired_entries(conn):
         """Получение устаревших записей из базы данных."""
         return await conn.fetch(
             "SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - INTERVAL '3 hours'"
@@ -80,7 +81,8 @@ class FTOView(discord.ui.View):
         except Exception as e:
             print(f"Пользователь закрыл ЛС для бота. {e}")
 
-    async def mark_entry_as_finished(self, conn, entry):
+    @staticmethod
+    async def mark_entry_as_finished(conn, entry):
         """Помечаем запись как завершённую в базе данных."""
         await conn.execute(
             "UPDATE queue SET finished_at = NOW() WHERE queue_id = $1",
@@ -91,8 +93,9 @@ class FTOView(discord.ui.View):
     async def before_cleanup_task(self):
         await self.bot.wait_until_ready()  # Ждём, пока бот будет готов
 
+    @staticmethod
     async def remove_user_from_embed(
-        self, embed: discord.Embed, user_name: str, field_name: str
+            embed: discord.Embed, user_name: str, field_name: str
     ):
         """
         Удаляет пользователя из указанного поля Embed.
@@ -121,6 +124,7 @@ class FTOView(discord.ui.View):
                     )
 
 
+# noinspection PyUnresolvedReferences
 class EnterQueue(discord.ui.Button):
     def __init__(self):
         super().__init__(
@@ -218,8 +222,9 @@ class EnterQueue(discord.ui.Button):
             print(f"Произошла ошибка в модуле FTO при входе в очередь. {e}")
             traceback.print_exc()  # Логируем ошибку
 
+    @staticmethod
     async def update_embed_field(
-        self, embed: discord.Embed, field_name: str, value: str
+            embed: discord.Embed, field_name: str, value: str
     ):
         """
         Обновляет поле в embed. Если поле существует, добавляет значение к текущему.
@@ -363,8 +368,9 @@ class EnterQueue(discord.ui.Button):
                 "❌ Произошла ошибка. Обратитесь к администратору.", ephemeral=True
             )
 
+    @staticmethod
     async def remove_user_from_embed(
-        self, embed: discord.Embed, user_name: str, field_name: str
+            embed: discord.Embed, user_name: str, field_name: str
     ):
         """Удаляет пользователя из указанного поля Embed"""
         for field in embed.fields:
@@ -391,6 +397,7 @@ class EnterQueue(discord.ui.Button):
                     )
 
 
+# noinspection PyUnresolvedReferences
 class LeaveButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
@@ -439,7 +446,8 @@ class LeaveButton(discord.ui.Button):
             await interaction.response.send_message(error_message, ephemeral=True)
             traceback.print_exception(type(e), e, e.__traceback__)  # Логируем ошибку
 
-    async def remove_user_from_embed(self, embed: discord.Embed, user_name: str):
+    @staticmethod
+    async def remove_user_from_embed(embed: discord.Embed, user_name: str):
         """
         Удаляет пользователя из всех полей embed.
         """
