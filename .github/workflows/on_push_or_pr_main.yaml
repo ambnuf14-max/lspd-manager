@@ -53,13 +53,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Create GitHub deployment
-        id: deployment
-        uses: chrnorm/deployment-action@v2
-        with:
-          token: ${{ github.token }}
-          environment: 'production'
-          environment-url: ${{ vars.DEPLOYMENT_URL }}
+#      - name: Create GitHub deployment
+#        id: deployment
+#        uses: chrnorm/deployment-action@v2
+#        with:
+#          token: ${{ github.token }}
+#          environment: 'production'
+#          environment-url: ${{ vars.DEPLOYMENT_URL }}
 
       - name: SSH Deploy and Restart Service
         uses: appleboy/ssh-action@master
@@ -74,20 +74,20 @@ jobs:
             git pull origin main
             systemctl restart bot
 
-      - name: Update deployment status (success)
-        if: success()
-        uses: chrnorm/deployment-status@v2
-        with:
-          token: ${{ github.token }}
-          deployment-id: ${{ steps.deployment.outputs.deployment-id }}
-          environment-url: ${{ steps.deployment.outputs.environment-url }}
-          state: success
-
-      - name: Update deployment status (failure)
-        if: failure()
-        uses: chrnorm/deployment-status@v2
-        with:
-          token: ${{ github.token }}
-          deployment-id: ${{ steps.deployment.outputs.deployment-id }}
-          environment-url: ${{ steps.deployment.outputs.environment-url }}
-          state: failure
+#      - name: Update deployment status (success)
+#        if: success()
+#        uses: chrnorm/deployment-status@v2
+#        with:
+#          token: ${{ github.token }}
+#          deployment-id: ${{ steps.deployment.outputs.deployment-id }}
+#          environment-url: ${{ steps.deployment.outputs.environment-url }}
+#          state: success
+#
+#      - name: Update deployment status (failure)
+#        if: failure()
+#        uses: chrnorm/deployment-status@v2
+#        with:
+#          token: ${{ github.token }}
+#          deployment-id: ${{ steps.deployment.outputs.deployment-id }}
+#          environment-url: ${{ steps.deployment.outputs.environment-url }}
+#          state: failure
