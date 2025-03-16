@@ -69,7 +69,9 @@ class FTOView(discord.ui.View):
 
     async def notify_user_about_expiration(self, entry):
         """Уведомление пользователя об истечении времени в очереди."""
-        user_id = entry["officer_id"] if entry["officer_id"] else entry["probationary_id"]
+        user_id = (
+            entry["officer_id"] if entry["officer_id"] else entry["probationary_id"]
+        )
         user = self.bot.get_user(user_id)
         if not user:
             return
@@ -95,7 +97,7 @@ class FTOView(discord.ui.View):
 
     @staticmethod
     async def remove_user_from_embed(
-            embed: discord.Embed, user_name: str, field_name: str
+        embed: discord.Embed, user_name: str, field_name: str
     ):
         """
         Удаляет пользователя из указанного поля Embed.
@@ -223,9 +225,7 @@ class EnterQueue(discord.ui.Button):
             traceback.print_exc()  # Логируем ошибку
 
     @staticmethod
-    async def update_embed_field(
-            embed: discord.Embed, field_name: str, value: str
-    ):
+    async def update_embed_field(embed: discord.Embed, field_name: str, value: str):
         """
         Обновляет поле в embed. Если поле существует, добавляет значение к текущему.
         Если поле не существует, создаёт новое поле.
@@ -370,7 +370,7 @@ class EnterQueue(discord.ui.Button):
 
     @staticmethod
     async def remove_user_from_embed(
-            embed: discord.Embed, user_name: str, field_name: str
+        embed: discord.Embed, user_name: str, field_name: str
     ):
         """Удаляет пользователя из указанного поля Embed"""
         for field in embed.fields:

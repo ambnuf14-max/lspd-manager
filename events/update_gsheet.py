@@ -39,7 +39,11 @@ async def update_roles(bot):
                     roles = [
                         role.name for role in member.roles if role.name != "@everyone"
                     ]
-                    comment = "Роли:\n" + "\n".join(roles)
+                    if roles:
+                        comment = "Роли:\n" + "\n".join(roles)
+                    else:
+                        comment = "-"
+
                     requests.append(
                         {
                             "updateCells": {
