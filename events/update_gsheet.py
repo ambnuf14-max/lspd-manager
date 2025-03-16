@@ -41,35 +41,59 @@ async def update_roles(bot):
                     ]
                     if roles:
                         comment = "Роли:\n" + "\n".join(roles)
-                    else:
-                        comment = "-"
-
-                    requests.append(
-                        {
-                            "updateCells": {
-                                "range": {
-                                    "sheetId": sheet.id,
-                                    "startRowIndex": i,  # Индексация с 0
-                                    "endRowIndex": i + 1,
-                                    "startColumnIndex": 13,  # Столбец N (индекс 13)
-                                    "endColumnIndex": 14,
-                                },
-                                "rows": [
-                                    {
-                                        "values": [
-                                            {
-                                                "userEnteredValue": {
-                                                    "stringValue": "+"
-                                                },
-                                                "note": comment,
-                                            }
-                                        ]
-                                    }
-                                ],
-                                "fields": "userEnteredValue,note",
+                        requests.append(
+                            {
+                                "updateCells": {
+                                    "range": {
+                                        "sheetId": sheet.id,
+                                        "startRowIndex": i,  # Индексация с 0
+                                        "endRowIndex": i + 1,
+                                        "startColumnIndex": 13,  # Столбец N (индекс 13)
+                                        "endColumnIndex": 14,
+                                    },
+                                    "rows": [
+                                        {
+                                            "values": [
+                                                {
+                                                    "userEnteredValue": {
+                                                        "stringValue": "+"
+                                                    },
+                                                    "note": comment,
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "fields": "userEnteredValue,note",
+                                }
                             }
-                        }
-                    )
+                        )
+                    else:
+                        cell_value = "-"
+                        requests.append(
+                            {
+                                "updateCells": {
+                                    "range": {
+                                        "sheetId": sheet.id,
+                                        "startRowIndex": i,  # Индексация с 0
+                                        "endRowIndex": i + 1,
+                                        "startColumnIndex": 13,  # Столбец N (индекс 13)
+                                        "endColumnIndex": 14,
+                                    },
+                                    "rows": [
+                                        {
+                                            "values": [
+                                                {
+                                                    "userEnteredValue": {
+                                                        "stringValue": cell_value
+                                                    },
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "fields": "userEnteredValue",
+                                }
+                            }
+                        )
 
         if requests:
             sheet.spreadsheet.batch_update({"requests": requests})
