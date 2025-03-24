@@ -86,11 +86,12 @@ async def update_roles(bot):
                                                     "userEnteredValue": {
                                                         "stringValue": cell_value
                                                     },
+                                                    "note": "",
                                                 }
                                             ]
                                         }
                                     ],
-                                    "fields": "userEnteredValue",
+                                    "fields": "userEnteredValue,note",
                                 }
                             }
                         )
@@ -121,29 +122,59 @@ async def update_roles_comment(member: Member):
             ]  # Предположим, что никнейм Discord находится во 21 столбце (индекс 20)
             if discord_username == str(member):
                 roles = [role.name for role in member.roles if role.name != "@everyone"]
-                comment = "Роли:\n" + "\n".join(roles)
-                requests = {
-                    "updateCells": {
-                        "range": {
-                            "sheetId": main_sheet.id,
-                            "startRowIndex": i,  # Индексация с 0
-                            "endRowIndex": i + 1,
-                            "startColumnIndex": 13,  # Столбец N (индекс 13)
-                            "endColumnIndex": 14,
-                        },
-                        "rows": [
-                            {
-                                "values": [
-                                    {
-                                        "userEnteredValue": {"stringValue": "+"},
-                                        "note": comment,
-                                    }
-                                ]
-                            }
-                        ],
-                        "fields": "userEnteredValue,note",
+                if roles:
+                    comment = "Роли:\n" + "\n".join(roles)
+                    cell_value = "+"
+                    requests = {
+                        "updateCells": {
+                            "range": {
+                                "sheetId": main_sheet.id,
+                                "startRowIndex": i,  # Индексация с 0
+                                "endRowIndex": i + 1,
+                                "startColumnIndex": 13,  # Столбец N (индекс 13)
+                                "endColumnIndex": 14,
+                            },
+                            "rows": [
+                                {
+                                    "values": [
+                                        {
+                                            "userEnteredValue": {
+                                                "stringValue": cell_value
+                                            },
+                                            "note": comment,
+                                        }
+                                    ]
+                                }
+                            ],
+                            "fields": "userEnteredValue,note",
+                        }
                     }
-                }
+                else:
+                    cell_value = "-"
+                    requests = {
+                        "updateCells": {
+                            "range": {
+                                "sheetId": main_sheet.id,
+                                "startRowIndex": i,  # Индексация с 0
+                                "endRowIndex": i + 1,
+                                "startColumnIndex": 13,  # Столбец N (индекс 13)
+                                "endColumnIndex": 14,
+                            },
+                            "rows": [
+                                {
+                                    "values": [
+                                        {
+                                            "userEnteredValue": {
+                                                "stringValue": cell_value
+                                            },
+                                            "note": "",
+                                        }
+                                    ]
+                                }
+                            ],
+                            "fields": "userEnteredValue,note",
+                        }
+                    }
                 main_sheet.spreadsheet.batch_update({"requests": requests})
                 print(f"Комментарий для {member.name} обновлен.")
                 # break

@@ -43,13 +43,13 @@ class FTOView(discord.ui.View):
 
     async def update_embed_for_expired_entry(self, entry):
         """Обновление Embed для устаревшей записи."""
-        channel = self.bot.get_channel(entry["channel_id"])
+        channel = self.bot.get_channel(channel_id)
         if not channel:
-            print(f"Канал {entry['channel_id']} не найден")
+            print(f"Канал {channel_id} не найден")
             return
 
         try:
-            message = await channel.fetch_message(entry["message_id"])
+            message = await channel.fetch_message(message_id)
             embed = message.embeds[0] if message.embeds else None
 
             if embed:
@@ -61,7 +61,7 @@ class FTOView(discord.ui.View):
                 )
                 await message.edit(embed=embed)
         except discord.NotFound:
-            print(f"Сообщение {entry['message_id']} не найдено.")
+            print(f"Сообщение {message_id} не найдено.")
         except discord.Forbidden:
             print(f"Нет прав для редактирования сообщения {entry['message_id']}.")
         except Exception as e:
