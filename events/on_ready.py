@@ -27,6 +27,8 @@ async def setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH):
         print("Синхронизация команд...")
         from bot.config import GUILD
         try:
+            # Копируем глобальные команды в guild перед синхронизацией
+            bot.tree.copy_global_to(guild=GUILD)
             synced = await bot.tree.sync(guild=GUILD)
             print(f"✅ Синхронизировано {len(synced)} команд для сервера {GUILD.id}")
         except Exception as e:

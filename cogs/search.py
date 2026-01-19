@@ -17,6 +17,8 @@ class SearchCog(commands.Cog):
     @commands.command()
     async def sync(self, ctx) -> None:
         if ctx.author.guild_permissions.administrator:
+            # Копируем глобальные команды в guild
+            self.bot.tree.copy_global_to(guild=ctx.guild)
             fmt = await ctx.bot.tree.sync(guild=ctx.guild)
             await ctx.send(f"Synced {len(fmt)} commands.")
         else:
