@@ -56,7 +56,8 @@ async def setup_db(bot):
                 name TEXT NOT NULL,
                 parent_id INT REFERENCES preset_categories(category_id) ON DELETE CASCADE,
                 created_by BIGINT NOT NULL,
-                created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
+                created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                emoji TEXT
             )
         """
         )
@@ -98,6 +99,20 @@ async def setup_db(bot):
                     WHERE table_name = 'role_presets' AND column_name = 'category_id'
                 ) THEN
                     ALTER TABLE role_presets ADD COLUMN category_id INT REFERENCES preset_categories(category_id) ON DELETE SET NULL;
+                END IF;
+            END $$;
+            """
+        )
+        # Миграция: добавляем колонку emoji в preset_categories если её нет
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'preset_categories' AND column_name = 'emoji'
+                ) THEN
+                    ALTER TABLE preset_categories ADD COLUMN emoji TEXT;
                 END IF;
             END $$;
             """
