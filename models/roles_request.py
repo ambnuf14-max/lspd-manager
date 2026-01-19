@@ -127,7 +127,7 @@ class PersistentView(discord.ui.View):
 
         # Основные кнопки (row=0)
         self.add_item(DoneButton(embed, user))
-        self.add_item(DropButton(embed, user))
+        self.add_item(DropButton(embed, user, bot))
         self.add_item(SettingsButton(embed, user, bot))
 
     async def load_presets(self):
@@ -407,10 +407,234 @@ class PresetManagementView(discord.ui.View):
         # Select для управления пресетами (включая опцию создания)
         self.add_item(PresetManagementSelect(self.presets, self.bot, self.guild, self))
 
-    @discord.ui.button(label="Обновить список", style=discord.ButtonStyle.gray, emoji="🔄", row=2)
-    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.refresh_presets()
-        await interaction.response.edit_message(view=self)
+        # Кнопки управления (row=2)
+        self.add_item(RejectReasonsButton(self.bot, self))
+        self.add_item(RefreshPresetsButton(self))
+
+
+class RefreshPresetsButton(discord.ui.Button):
+    """Кнопка обновления списка пресетов"""
+
+    def __init__(self, parent_view):
+        super().__init__(
+            label="Обновить",
+            style=discord.ButtonStyle.gray,
+            emoji="🔄",
+            row=2
+        )
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.parent_view.refresh_presets()
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class RejectReasonsButton(discord.ui.Button):
+    """Кнопка для управления причинами отказа"""
+
+    def __init__(self, bot, parent_view):
+        super().__init__(
+            label="Причины отказа",
+            style=discord.ButtonStyle.primary,
+            emoji="📋",
+            row=2
+        )
+        self.bot = bot
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        view = RejectReasonsManagementView(self.bot, self.parent_view)
+        await view.refresh_reasons()
+
+        embed = discord.Embed(
+            title="📋 Управление причинами отказа",
+            description="Выберите причину для удаления или создайте новую",
+            color=discord.Color.blue()
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+# ============== УПРАВЛЕНИЕ ПРИЧИНАМИ ОТКАЗА ==============
+
+class RejectReasonsManagementView(discord.ui.View):
+    """View для управления причинами отказа"""
+
+    def __init__(self, bot, parent_view):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.parent_view = parent_view
+        self.reasons = []
+
+    async def refresh_reasons(self):
+        """Загрузка причин из БД"""
+        async with self.bot.db_pool.acquire() as conn:
+            self.reasons = await conn.fetch(
+                "SELECT reason_id, reason_text FROM reject_reasons ORDER BY reason_id"
+            )
+
+        self.clear_items()
+        self.add_item(RejectReasonsManagementSelect(self.reasons, self.bot, self))
+
+        # Кнопки (row=2)
+        self.add_item(BackToPresetsButton(self.parent_view))
+
+
+class RejectReasonsManagementSelect(discord.ui.Select):
+    """Select для управления причинами отказа"""
+
+    def __init__(self, reasons: list, bot, parent_view):
+        self.reasons_data = {str(r['reason_id']): r for r in reasons}
+        self.bot = bot
+        self.parent_view = parent_view
+
+        options = [
+            discord.SelectOption(
+                label="Добавить причину",
+                value="create_reason",
+                emoji="➕",
+                description="Создать новую причину отказа"
+            )
+        ]
+
+        for reason in reasons[:24]:
+            text = reason['reason_text']
+            if len(text) > 100:
+                text = text[:97] + "..."
+            options.append(discord.SelectOption(
+                label=text,
+                value=str(reason['reason_id']),
+                emoji="📋"
+            ))
+
+        super().__init__(
+            placeholder="Выберите действие или причину...",
+            options=options,
+            row=0
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        selected_value = self.values[0]
+
+        if selected_value == "create_reason":
+            modal = RejectReasonCreateModal(self.bot, self.parent_view)
+            await interaction.response.send_modal(modal)
+            return
+
+        reason = self.reasons_data.get(selected_value)
+        if not reason:
+            await interaction.response.send_message("Причина не найдена.", ephemeral=True)
+            return
+
+        # Показываем подтверждение удаления
+        view = ConfirmDeleteReasonView(reason, self.bot, self.parent_view)
+        await interaction.response.edit_message(
+            content=f"**Удалить причину «{reason['reason_text']}»?**\n\nЭто действие необратимо!",
+            embed=None,
+            view=view
+        )
+
+
+class RejectReasonCreateModal(discord.ui.Modal, title="Добавить причину отказа"):
+    """Модальное окно для создания новой причины отказа"""
+
+    reason_text = discord.ui.TextInput(
+        label="Текст причины",
+        placeholder="Например: Никнейм не по формату",
+        required=True,
+        max_length=200
+    )
+
+    def __init__(self, bot, parent_view):
+        super().__init__()
+        self.bot = bot
+        self.parent_view = parent_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO reject_reasons (reason_text, created_by, created_at) VALUES ($1, $2, NOW())",
+                    self.reason_text.value,
+                    interaction.user.id
+                )
+
+            logger.info(f"Причина отказа '{self.reason_text.value}' создана пользователем {interaction.user.display_name}")
+
+            await self.parent_view.refresh_reasons()
+            embed = discord.Embed(
+                title="📋 Управление причинами отказа",
+                description=f"Причина **«{self.reason_text.value}»** добавлена!",
+                color=discord.Color.green()
+            )
+            await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+        except Exception as e:
+            logger.error(f"Ошибка при создании причины отказа: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"Ошибка при создании причины: {e}",
+                ephemeral=True
+            )
+
+
+class ConfirmDeleteReasonView(discord.ui.View):
+    """View для подтверждения удаления причины отказа"""
+
+    def __init__(self, reason: dict, bot, parent_view):
+        super().__init__(timeout=60)
+        self.reason = reason
+        self.bot = bot
+        self.parent_view = parent_view
+
+    @discord.ui.button(label="Да, удалить", style=discord.ButtonStyle.danger, emoji="🗑")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM reject_reasons WHERE reason_id = $1",
+                self.reason['reason_id']
+            )
+
+        logger.info(f"Причина отказа '{self.reason['reason_text']}' удалена пользователем {interaction.user.display_name}")
+
+        await self.parent_view.refresh_reasons()
+        embed = discord.Embed(
+            title="📋 Управление причинами отказа",
+            description=f"Причина **«{self.reason['reason_text']}»** удалена!",
+            color=discord.Color.red()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+    @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, emoji="✖")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.parent_view.refresh_reasons()
+        embed = discord.Embed(
+            title="📋 Управление причинами отказа",
+            description="Удаление отменено",
+            color=discord.Color.blue()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+
+class BackToPresetsButton(discord.ui.Button):
+    """Кнопка возврата к управлению пресетами"""
+
+    def __init__(self, parent_view):
+        super().__init__(
+            label="Назад к пресетам",
+            style=discord.ButtonStyle.gray,
+            emoji="◀",
+            row=2
+        )
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.parent_view.refresh_presets()
+        embed = discord.Embed(
+            title="⚙ Управление пресетами",
+            description="Выберите действие или пресет для редактирования",
+            color=discord.Color.blue()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
 
 
 class PresetManagementSelect(discord.ui.Select):
@@ -1051,12 +1275,140 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
 
 # ============== КНОПКИ ОДОБРЕНИЯ/ОТКЛОНЕНИЯ ==============
 
+# ============== ВЫБОР ПРИЧИНЫ ОТКАЗА ==============
+
+class RejectReasonView(discord.ui.View):
+    """View для выбора причины отказа"""
+
+    def __init__(self, embed: discord.Embed, user: discord.User, bot, original_message, original_view):
+        super().__init__(timeout=120)
+        self.embed = embed
+        self.user = user
+        self.bot = bot
+        self.original_message = original_message
+        self.original_view = original_view
+
+    async def load_reasons(self):
+        """Загрузка причин из БД и добавление Select"""
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                reasons = await conn.fetch(
+                    "SELECT reason_id, reason_text FROM reject_reasons ORDER BY reason_id"
+                )
+
+            self.add_item(RejectReasonSelect(
+                reasons=reasons,
+                embed=self.embed,
+                user=self.user,
+                bot=self.bot,
+                original_message=self.original_message,
+                original_view=self.original_view
+            ))
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке причин отказа: {e}", exc_info=True)
+
+
+class RejectReasonSelect(discord.ui.Select):
+    """Выпадающий список для выбора причины отказа"""
+
+    def __init__(self, reasons: list, embed: discord.Embed, user: discord.User, bot, original_message, original_view):
+        self.embed = embed
+        self.user = user
+        self.bot = bot
+        self.original_message = original_message
+        self.original_view = original_view
+
+        options = []
+
+        # Добавляем стандартные причины
+        for reason in reasons[:24]:
+            options.append(discord.SelectOption(
+                label=reason['reason_text'][:100],
+                value=str(reason['reason_id']),
+                emoji="📋"
+            ))
+
+        # Добавляем опцию "Свой текст"
+        options.append(discord.SelectOption(
+            label="Свой текст...",
+            value="custom",
+            emoji="✏",
+            description="Написать свою причину отказа"
+        ))
+
+        super().__init__(
+            placeholder="Выберите причину отказа...",
+            options=options,
+            row=0
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        selected_value = self.values[0]
+
+        # Если выбран "Свой текст" - открываем модальное окно
+        if selected_value == "custom":
+            modal = DropModal(self.embed, self.user, self.original_view, self.original_message)
+            await interaction.response.send_modal(modal)
+            return
+
+        # Получаем текст причины из БД
+        async with self.bot.db_pool.acquire() as conn:
+            reason = await conn.fetchval(
+                "SELECT reason_text FROM reject_reasons WHERE reason_id = $1",
+                int(selected_value)
+            )
+
+        if not reason:
+            await interaction.response.send_message("Причина не найдена.", ephemeral=True)
+            return
+
+        # Применяем отказ
+        await self._apply_rejection(interaction, reason)
+
+    async def _apply_rejection(self, interaction: discord.Interaction, reason: str):
+        """Применение отказа с указанной причиной"""
+        self.embed.color = discord.Color.red()
+        self.embed.set_footer(
+            text=f"Отклонено пользователем {interaction.user.display_name}. Причина: {reason}"
+        )
+
+        self.original_view.clear_items()
+        await self.original_message.edit(embed=self.embed, view=self.original_view)
+
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE requests SET status = 'rejected', finished_by = $1, finished_at = $2, reject_reason = $3"
+                " WHERE message_id = $4",
+                interaction.user.id,
+                datetime.now(),
+                reason,
+                self.original_message.id,
+            )
+
+        await interaction.response.edit_message(
+            content=f"Запрос от {self.user.display_name} отклонён!\nПричина: {reason}",
+            view=None
+        )
+
+        try:
+            await self.user.send(
+                f"Ваш запрос на получение ролей был отклонён. Причина: {reason}"
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"Не удалось отправить сообщение пользователю {self.user.display_name}. "
+                f"Возможно, у него закрыты личные сообщения.",
+                ephemeral=True,
+            )
+
+
 class DropModal(discord.ui.Modal, title="Причина отказа"):
-    def __init__(self, embed: discord.Embed, user: discord.User, view: discord.ui.View):
+    def __init__(self, embed: discord.Embed, user: discord.User, view: discord.ui.View, original_message=None):
         super().__init__()
         self.embed = embed
         self.user = user
         self.view = view
+        self.original_message = original_message
 
     reason = discord.ui.TextInput(
         label="Укажите причину отказа",
@@ -1073,7 +1425,10 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
         )
 
         self.view.clear_items()
-        await interaction.message.edit(embed=self.embed, view=self.view)
+
+        # Используем original_message если передан, иначе interaction.message
+        message_to_edit = self.original_message or interaction.message
+        await message_to_edit.edit(embed=self.embed, view=self.view)
 
         async with interaction.client.db_pool.acquire() as conn:
             await conn.execute(
@@ -1082,11 +1437,12 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
                 interaction.user.id,
                 datetime.now(),
                 self.reason.value,
-                interaction.message.id,
+                message_to_edit.id,
             )
 
         await interaction.response.send_message(
-            f"Запрос от {self.user.display_name} отклонён!", ephemeral=True
+            f"Запрос от {self.user.display_name} отклонён!\nПричина: {self.reason.value}",
+            ephemeral=True
         )
 
         try:
@@ -1129,7 +1485,7 @@ class ButtonView(discord.ui.View):
 
 
 class DropButton(discord.ui.Button):
-    def __init__(self, embed: discord.Embed, user: discord.User):
+    def __init__(self, embed: discord.Embed, user: discord.User, bot=None):
         super().__init__(
             label="Отклонить",
             style=discord.ButtonStyle.red,
@@ -1138,10 +1494,24 @@ class DropButton(discord.ui.Button):
         )
         self.embed = embed
         self.user = user
+        self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(
-            DropModal(self.embed, self.user, self.view)
+        # Показываем ephemeral сообщение с выбором причины
+        bot = self.bot or interaction.client
+        reject_view = RejectReasonView(
+            embed=self.embed,
+            user=self.user,
+            bot=bot,
+            original_message=interaction.message,
+            original_view=self.view
+        )
+        await reject_view.load_reasons()
+
+        await interaction.response.send_message(
+            "**Выберите причину отказа:**",
+            view=reject_view,
+            ephemeral=True
         )
 
 

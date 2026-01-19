@@ -90,4 +90,29 @@ async def setup_db(bot):
             )
         """
         )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reject_reasons (
+                reason_id SERIAL PRIMARY KEY,
+                reason_text TEXT NOT NULL,
+                created_by BIGINT NOT NULL,
+                created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
+            )
+        """
+        )
+        # Добавляем стандартные причины если таблица пустая
+        existing_reasons = await conn.fetchval("SELECT COUNT(*) FROM reject_reasons")
+        if existing_reasons == 0:
+            default_reasons = [
+                "Никнейм не по формату",
+                "Не указан Discord в профиле форума",
+                "Профиль форума не найден",
+                "Недостаточно информации"
+            ]
+            for reason in default_reasons:
+                await conn.execute(
+                    "INSERT INTO reject_reasons (reason_text, created_by, created_at) VALUES ($1, 0, NOW())",
+                    reason
+                )
+            logger.info(f"Добавлено {len(default_reasons)} стандартных причин отказа")
         logger.info("Таблицы БД созданы/проверены успешно")
