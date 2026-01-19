@@ -80,6 +80,61 @@ class RanksUtility(commands.Cog):
 
         return False
 
+    @app_commands.command(name="list_categories", description="Показать все категории с их ID")
+    async def list_categories(self, interaction: discord.Interaction):
+        """Показывает список всех категорий с ID для использования в bulk_create_ranks"""
+        if not await self.is_preset_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ У вас нет прав для просмотра категорий.",
+                ephemeral=True
+            )
+            return
+
+        async with self.bot.db_pool.acquire() as conn:
+            categories = await conn.fetch(
+                """
+                SELECT c.category_id, c.name, c.parent_id, p.name as parent_name
+                FROM preset_categories c
+                LEFT JOIN preset_categories p ON c.parent_id = p.category_id
+                ORDER BY p.name NULLS FIRST, c.name
+                """
+            )
+
+        if not categories:
+            await interaction.response.send_message(
+                "📁 Категории не созданы.\n\nСоздайте категории через команду `/settings` → Управление категориями.",
+                ephemeral=True
+            )
+            return
+
+        # Формируем список
+        root_cats = []
+        sub_cats = []
+
+        for cat in categories:
+            cat_id = cat['category_id']
+            cat_name = cat['name']
+
+            if cat['parent_id'] is None:
+                # Корневая категория
+                root_cats.append(f"📁 **{cat_name}** (ID: `{cat_id}`)")
+            else:
+                # Подкатегория
+                parent_name = cat['parent_name']
+                sub_cats.append(f"  📂 {parent_name} → **{cat_name}** (ID: `{cat_id}`)")
+
+        response = "📚 **Список категорий:**\n\n"
+
+        if root_cats:
+            response += "**Корневые категории:**\n" + "\n".join(root_cats) + "\n\n"
+
+        if sub_cats:
+            response += "**Подкатегории:**\n" + "\n".join(sub_cats) + "\n\n"
+
+        response += "💡 Используйте ID категории в команде `/bulk_create_ranks`"
+
+        await interaction.response.send_message(response, ephemeral=True)
+
     @app_commands.command(name="bulk_create_ranks", description="Массовое создание пресетов для рангов LSPD")
     @app_commands.describe(
         category_id="ID категории, куда добавить ранги (подкатегория со статусами)",
