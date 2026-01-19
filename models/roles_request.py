@@ -61,6 +61,40 @@ def parse_emoji(emoji_str: str, guild: discord.Guild = None) -> discord.PartialE
         return None
 
 
+def normalize_emoji_for_storage(emoji_str: str, guild: discord.Guild) -> str | None:
+    """
+    Нормализует эмодзи для сохранения в БД.
+    Преобразует ID в полный формат <:name:id> если эмодзи найден на сервере.
+    """
+    if not emoji_str:
+        return None
+
+    emoji_str = emoji_str.strip()
+
+    if not emoji_str:
+        return None
+
+    # Уже в полном формате - возвращаем как есть
+    if re.match(r'<a?:\w+:\d+>', emoji_str):
+        return emoji_str
+
+    # Если это ID - преобразуем в полный формат
+    if emoji_str.isdigit():
+        emoji_id = int(emoji_str)
+        if guild:
+            emoji = discord.utils.get(guild.emojis, id=emoji_id)
+            if emoji:
+                prefix = 'a' if emoji.animated else ''
+                return f"<{prefix}:{emoji.name}:{emoji.id}>"
+        return None  # Невалидный ID
+
+    # Unicode эмодзи - возвращаем как есть
+    if len(emoji_str) <= 4 and not emoji_str.isascii():
+        return emoji_str
+
+    return None
+
+
 # ============== ПРОВЕРКА ПРАВ ==============
 
 async def is_preset_admin(user: discord.Member) -> bool:
