@@ -388,7 +388,7 @@ class PresetPrevPageButton(discord.ui.Button):
 
     def __init__(self, select: PresetCategorySelect):
         super().__init__(
-            label="◀ Пред",
+            label="Пред",
             style=discord.ButtonStyle.gray,
             custom_id=f"preset_prev_{select.parent_category_id or 'root'}_{select.page}",
             row=2,
@@ -429,7 +429,7 @@ class PresetNextPageButton(discord.ui.Button):
 
     def __init__(self, select: PresetCategorySelect):
         super().__init__(
-            label="След ▶",
+            label="След",
             style=discord.ButtonStyle.gray,
             custom_id=f"preset_next_{select.parent_category_id or 'root'}_{select.page}",
             row=2,
@@ -845,27 +845,36 @@ class CategoryContentView(discord.ui.View):
             )
 
         self.clear_items()
-        self.add_item(CategoryContentSelect(self.subcategories, self.presets, self.bot, self))
+        select = CategoryContentSelect(self.subcategories, self.presets, self.bot, self)
+        self.add_item(select)
         self.add_item(AddSubcategoryButton(self.category, self.bot, self))
         self.add_item(AddPresetButton(self.category, self.bot, self.guild, self))
         self.add_item(EditCategoryButton(self.category, self.bot, self))
         self.add_item(DeleteCategoryButton(self.category, self.bot, self))
         self.add_item(BackToCategoriesButton(self.parent_view))
 
+        # Добавляем кнопки пагинации если нужно
+        if select.total_pages > 1:
+            self.add_item(CategoryContentPrevPageButton(select))
+            self.add_item(CategoryContentNextPageButton(select))
+
 
 class CategoryContentSelect(discord.ui.Select):
     """Select для выбора подкатегории или пресета"""
 
-    def __init__(self, subcategories: list, presets: list, bot, parent_view):
+    def __init__(self, subcategories: list, presets: list, bot, parent_view, page=0):
+        self.all_subcategories = list(subcategories)
+        self.all_presets = list(presets)
         self.subcategories_data = {f"subcat_{s['category_id']}": s for s in subcategories}
         self.presets_data = {f"preset_{p['preset_id']}": p for p in presets}
         self.bot = bot
         self.parent_view = parent_view
+        self.page = page
 
         options = []
 
-        # Добавляем подкатегории
-        for subcat in subcategories[:12]:
+        # Сначала показываем все подкатегории (они не пагинируются)
+        for subcat in subcategories:
             emoji_str = subcat.get('emoji')
             emoji = "📂"
             if emoji_str:
@@ -881,8 +890,14 @@ class CategoryContentSelect(discord.ui.Select):
                 emoji=emoji
             ))
 
-        # Добавляем пресеты
-        for preset in presets[:12]:
+        # Вычисляем количество элементов на странице
+        max_options = 25 - len(subcategories)
+        start_idx = self.page * max_options
+        end_idx = start_idx + max_options
+
+        # Добавляем пресеты для текущей страницы
+        presets_on_page = presets[start_idx:end_idx]
+        for preset in presets_on_page:
             emoji_str = preset.get('emoji')
             emoji = None
             if emoji_str:
@@ -908,8 +923,16 @@ class CategoryContentSelect(discord.ui.Select):
                 emoji="📭"
             ))
 
+        # Вычисляем общее количество страниц
+        total_presets = len(presets)
+        self.total_pages = (total_presets + max_options - 1) // max_options if total_presets > 0 else 1
+
+        placeholder = "Выберите подкатегорию или пресет..."
+        if self.total_pages > 1:
+            placeholder = f"Выберите подкатегорию или пресет... (Стр. {self.page + 1}/{self.total_pages})"
+
         super().__init__(
-            placeholder="Выберите подкатегорию или пресет...",
+            placeholder=placeholder,
             options=options,
             row=0
         )
@@ -981,6 +1004,84 @@ class CategoryContentSelect(discord.ui.Select):
             embed.add_field(name="Роли", value="\n".join(role_names), inline=False)
 
             await interaction.response.edit_message(embed=embed, view=view)
+
+
+class CategoryContentPrevPageButton(discord.ui.Button):
+    """Кнопка для перехода на предыдущую страницу пресетов в категории"""
+
+    def __init__(self, select: CategoryContentSelect):
+        super().__init__(
+            label="Пред",
+            style=discord.ButtonStyle.gray,
+            custom_id=f"category_content_prev_{select.page}",
+            row=3,
+            disabled=(select.page == 0)
+        )
+        self.select = select
+
+    async def callback(self, interaction: discord.Interaction):
+        # Создаем новый select с предыдущей страницей
+        new_select = CategoryContentSelect(
+            self.select.all_subcategories,
+            self.select.all_presets,
+            self.select.bot,
+            self.select.parent_view,
+            self.select.page - 1
+        )
+
+        # Удаляем старый select и кнопки пагинации
+        items_to_remove = [item for item in self.view.children if isinstance(item, (CategoryContentSelect, CategoryContentPrevPageButton, CategoryContentNextPageButton))]
+        for item in items_to_remove:
+            self.view.remove_item(item)
+
+        # Добавляем новый select (в начало, row=0)
+        self.view.children.insert(0, new_select)
+
+        # Добавляем новые кнопки пагинации если нужно
+        if new_select.total_pages > 1:
+            self.view.add_item(CategoryContentPrevPageButton(new_select))
+            self.view.add_item(CategoryContentNextPageButton(new_select))
+
+        await interaction.response.edit_message(view=self.view)
+
+
+class CategoryContentNextPageButton(discord.ui.Button):
+    """Кнопка для перехода на следующую страницу пресетов в категории"""
+
+    def __init__(self, select: CategoryContentSelect):
+        super().__init__(
+            label="След",
+            style=discord.ButtonStyle.gray,
+            custom_id=f"category_content_next_{select.page}",
+            row=3,
+            disabled=(select.page >= select.total_pages - 1)
+        )
+        self.select = select
+
+    async def callback(self, interaction: discord.Interaction):
+        # Создаем новый select с следующей страницей
+        new_select = CategoryContentSelect(
+            self.select.all_subcategories,
+            self.select.all_presets,
+            self.select.bot,
+            self.select.parent_view,
+            self.select.page + 1
+        )
+
+        # Удаляем старый select и кнопки пагинации
+        items_to_remove = [item for item in self.view.children if isinstance(item, (CategoryContentSelect, CategoryContentPrevPageButton, CategoryContentNextPageButton))]
+        for item in items_to_remove:
+            self.view.remove_item(item)
+
+        # Добавляем новый select (в начало, row=0)
+        self.view.children.insert(0, new_select)
+
+        # Добавляем новые кнопки пагинации если нужно
+        if new_select.total_pages > 1:
+            self.view.add_item(CategoryContentPrevPageButton(new_select))
+            self.view.add_item(CategoryContentNextPageButton(new_select))
+
+        await interaction.response.edit_message(view=self.view)
 
 
 class AddSubcategoryButton(discord.ui.Button):
