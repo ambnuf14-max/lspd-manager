@@ -1402,15 +1402,13 @@ class CategoryEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-
         await self.parent_view.refresh_categories()
         embed = discord.Embed(
             title="📁 Управление категориями",
             description="Категории позволяют группировать пресеты.",
             color=discord.Color.blue()
         )
-        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
 
 
 class CategoryRenameModal(discord.ui.Modal, title="Редактировать категорию"):
@@ -1787,8 +1785,6 @@ class RejectReasonEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-
         await self.parent_view.refresh_reasons()
         embed = discord.Embed(
             title="📋 Настройка причин отказа",
@@ -1796,7 +1792,7 @@ class RejectReasonEditView(discord.ui.View):
                         "💡 **Подсказка:** Вы можете настроить текст сообщения, которое будет отправлено пользователю в ЛС",
             color=discord.Color.blue()
         )
-        await interaction.edit_original_response(embed=embed, view=self.parent_view)
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
 
 
 class RejectReasonCreateModal(discord.ui.Modal, title="Добавить причину отказа"):
@@ -2230,15 +2226,13 @@ class PresetEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=2)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-
         await self.parent_view.refresh_presets()
         embed = discord.Embed(
             title="⚙ Управление пресетами",
             description="Выберите действие или пресет для редактирования",
             color=discord.Color.blue()
         )
-        await interaction.edit_original_response(embed=embed, view=self.parent_view)
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
 
 
 # ============== ИЗМЕНЕНИЕ КАТЕГОРИИ ПРЕСЕТА ==============
