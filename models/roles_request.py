@@ -182,20 +182,23 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Защита от спама: проверка на активные запросы
+        # Защита от спама: кулдаун 10 минут между запросами
         async with interaction.client.db_pool.acquire() as conn:
-            active_request = await conn.fetchrow(
-                "SELECT message_id FROM requests WHERE user_id = $1 AND status = 'pending'",
+            last_request = await conn.fetchrow(
+                "SELECT created_at FROM requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
                 self.user.id
             )
 
-        if active_request:
-            await interaction.response.send_message(
-                f"❌ У вас уже есть активный запрос (ID: {active_request['message_id']})!\n"
-                f"Дождитесь его обработки перед созданием нового.",
-                ephemeral=True
-            )
-            return
+        if last_request and last_request['created_at']:
+            time_diff = datetime.now() - last_request['created_at']
+            cooldown_minutes = 10
+            if time_diff.total_seconds() < cooldown_minutes * 60:
+                remaining = cooldown_minutes - int(time_diff.total_seconds() / 60)
+                await interaction.response.send_message(
+                    f"❌ Подождите ещё {remaining} мин. перед созданием нового запроса.",
+                    ephemeral=True
+                )
+                return
 
         channel = interaction.guild.get_channel(ADM_ROLES_CH)
 
