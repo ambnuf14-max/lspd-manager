@@ -267,6 +267,69 @@ class RanksUtility(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
         logger.info(f"Массовое создание рангов завершено: создано {len(created_ranks)}, пропущено {len(failed_ranks)}")
 
+    @app_commands.command(name="delete_all_ranks", description="Удалить все пресеты рангов LSPD из БД")
+    async def delete_all_ranks(self, interaction: discord.Interaction):
+        """Удаляет все пресеты рангов LSPD из базы данных"""
+        if not await self.is_preset_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ У вас нет прав для управления пресетами.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        deleted_count = 0
+        not_found = []
+
+        async with self.bot.db_pool.acquire() as conn:
+            for rank_name in LSPD_RANKS:
+                try:
+                    # Проверяем существование пресета
+                    existing = await conn.fetchval(
+                        "SELECT preset_id FROM role_presets WHERE name = $1",
+                        rank_name
+                    )
+
+                    if existing:
+                        # Удаляем пресет
+                        await conn.execute(
+                            "DELETE FROM role_presets WHERE name = $1",
+                            rank_name
+                        )
+                        deleted_count += 1
+                        logger.info(f"Удален пресет для ранга '{rank_name}'")
+                    else:
+                        not_found.append(rank_name)
+
+                except Exception as e:
+                    logger.error(f"Ошибка при удалении пресета '{rank_name}': {e}", exc_info=True)
+                    not_found.append(f"{rank_name} (ошибка)")
+
+        # Формируем ответ
+        embed = discord.Embed(
+            title="🗑️ Удаление пресетов рангов LSPD",
+            color=discord.Color.orange(),
+            timestamp=datetime.now()
+        )
+
+        if deleted_count > 0:
+            embed.add_field(
+                name=f"✅ Удалено ({deleted_count})",
+                value=f"Удалено {deleted_count} из {len(LSPD_RANKS)} рангов",
+                inline=False
+            )
+
+        if not_found:
+            embed.add_field(
+                name=f"ℹ️ Не найдено ({len(not_found)})",
+                value=f"{len(not_found)} рангов не были найдены в БД",
+                inline=False
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        logger.info(f"Удаление рангов завершено: удалено {deleted_count}, не найдено {len(not_found)}")
+
 
 async def setup(bot):
     await bot.add_cog(RanksUtility(bot))

@@ -199,6 +199,42 @@ async def setup_db(bot):
             END $$;
             """
         )
+        # Миграция: изменяем constraint для category_id с SET NULL на CASCADE
+        await conn.execute(
+            """
+            DO $$
+            DECLARE
+                constraint_name TEXT;
+            BEGIN
+                -- Находим имя constraint для category_id
+                SELECT tc.constraint_name INTO constraint_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                WHERE tc.table_name = 'role_presets'
+                  AND kcu.column_name = 'category_id'
+                  AND tc.constraint_type = 'FOREIGN KEY'
+                LIMIT 1;
+
+                -- Если constraint найден, удаляем его и создаем новый с CASCADE
+                IF constraint_name IS NOT NULL THEN
+                    -- Проверяем, что это старый constraint с SET NULL
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.referential_constraints rc
+                        WHERE rc.constraint_name = constraint_name
+                        AND rc.delete_rule = 'SET NULL'
+                    ) THEN
+                        EXECUTE 'ALTER TABLE role_presets DROP CONSTRAINT ' || constraint_name;
+                        ALTER TABLE role_presets
+                        ADD CONSTRAINT role_presets_category_id_fkey
+                        FOREIGN KEY (category_id)
+                        REFERENCES preset_categories(category_id)
+                        ON DELETE CASCADE;
+                    END IF;
+                END IF;
+            END $$;
+            """
+        )
         # Добавляем стандартные причины если таблица пустая
         existing_reasons = await conn.fetchval("SELECT COUNT(*) FROM reject_reasons")
         if existing_reasons == 0:
