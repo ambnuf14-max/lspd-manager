@@ -235,23 +235,24 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
         self.bot = None
 
     info = discord.ui.TextInput(
-        label="Информация!!!!",
-        default="Обязательно укажите на сервере никнейм в следующем формате: Name Surname (OOC Nick).",
-        style=discord.TextStyle.long,
+        label="Важно",
+        default="Никнейм на сервере должен быть в формате: Name Surname (OOC Nick)",
+        style=discord.TextStyle.short,
         required=False,
     )
 
     feedback = discord.ui.TextInput(
         label="Запрашиваемые роли",
         style=discord.TextStyle.long,
+        placeholder="Например: Rampart Area, Detective I",
         required=True,
         max_length=300,
     )
 
     forum = discord.ui.TextInput(
-        label="Форумный аккаунт (pd.ls-es.su)",
+        label="Форумный аккаунт (ps.ls-es.su)",
         style=discord.TextStyle.short,
-        placeholder="Проверьте, указан ли в профиле дискорд.",
+        placeholder="Удостоверьтесь, что указали Discord в профиле",
         required=True,
         max_length=100,
     )
@@ -259,7 +260,7 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     vk = discord.ui.TextInput(
         label="ВКонтакте",
         style=discord.TextStyle.short,
-        placeholder="https://vk.com/id1",
+        placeholder="https://vk.com/...",
         required=True,
         max_length=100,
     )
