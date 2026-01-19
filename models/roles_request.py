@@ -187,7 +187,7 @@ class PresetSelect(discord.ui.Select):
             ))
 
         super().__init__(
-            placeholder="Выберите пресет для применения...",
+            placeholder="Выберите пресет ролей для выдачи...",
             options=options,
             custom_id="preset_select",
             row=1
@@ -407,26 +407,8 @@ class PresetManagementView(discord.ui.View):
         # Select для управления пресетами (включая опцию создания)
         self.add_item(PresetManagementSelect(self.presets, self.bot, self.guild, self))
 
-        # Кнопки управления (row=2)
+        # Кнопка управления причинами (row=2)
         self.add_item(RejectReasonsButton(self.bot, self))
-        self.add_item(RefreshPresetsButton(self))
-
-
-class RefreshPresetsButton(discord.ui.Button):
-    """Кнопка обновления списка пресетов"""
-
-    def __init__(self, parent_view):
-        super().__init__(
-            label="Обновить",
-            style=discord.ButtonStyle.gray,
-            emoji="🔄",
-            row=2
-        )
-        self.parent_view = parent_view
-
-    async def callback(self, interaction: discord.Interaction):
-        await self.parent_view.refresh_presets()
-        await interaction.response.edit_message(view=self.parent_view)
 
 
 class RejectReasonsButton(discord.ui.Button):
