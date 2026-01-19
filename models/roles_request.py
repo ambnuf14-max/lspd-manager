@@ -297,6 +297,14 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
                     return
 
         channel = interaction.guild.get_channel(ADM_ROLES_CH)
+        member = interaction.guild.get_member(self.user.id)
+
+        # Получаем текущие роли пользователя (кроме @everyone)
+        current_roles = [role.mention for role in member.roles if role.name != "@everyone"] if member else []
+        roles_text = ", ".join(current_roles) if current_roles else "Нет ролей"
+
+        # Дата захода на сервер
+        joined_at = member.joined_at.strftime("%d.%m.%Y %H:%M") if member and member.joined_at else "Неизвестно"
 
         embed = discord.Embed(
             title="Новый запрос",
@@ -308,6 +316,7 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
             f"**{self.vk.label}**\n"
             f"{self.vk.value}",
             color=discord.Color.yellow(),
+            timestamp=datetime.now(),
         )
 
         embed.set_author(
@@ -315,6 +324,10 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
             icon_url=self.user.display_avatar.url,
             url=f"https://discord.com/users/{self.user.id}",
         )
+
+        embed.add_field(name="🆔 User ID", value=str(self.user.id), inline=True)
+        embed.add_field(name="📅 На сервере с", value=joined_at, inline=True)
+        embed.add_field(name="🎭 Текущие роли", value=roles_text[:1024], inline=False)
 
         view = PersistentView(embed, self.user, self.bot)
         await view.load_presets()  # Загрузить пресеты ПЕРЕД отправкой
@@ -427,7 +440,6 @@ class DropButton(discord.ui.Button):
             label="Отклонить",
             style=discord.ButtonStyle.red,
             custom_id="drop_button",
-            emoji="❌",
             row=0
         )
         self.embed = embed
@@ -445,7 +457,6 @@ class DoneButton(discord.ui.Button):
             label="Выполнено",
             style=discord.ButtonStyle.green,
             custom_id="done_button",
-            emoji="✅",
             row=0
         )
         self.embed = embed
