@@ -139,6 +139,12 @@ class PersistentView(discord.ui.View):
             select = PresetCategorySelect(self.embed, self.user, self.bot, self.guild)
             await select.load_options()
             self.add_item(select)
+
+            # Добавляем кнопки пагинации если нужно
+            if select.total_pages > 1:
+                self.add_item(PresetPrevPageButton(select))
+                self.add_item(PresetNextPageButton(select))
+
             logger.info(f"Каскадный выбор пресетов загружен для запроса от {self.user.display_name}")
             self._presets_loaded = True
         except Exception as e:
@@ -150,17 +156,18 @@ class PersistentView(discord.ui.View):
 class PresetCategorySelect(discord.ui.Select):
     """Первый уровень - выбор категории или пресета без категории"""
 
-    def __init__(self, embed: discord.Embed, user: discord.User, bot, guild: discord.Guild, parent_category_id=None):
+    def __init__(self, embed: discord.Embed, user: discord.User, bot, guild: discord.Guild, parent_category_id=None, page=0):
         self.embed = embed
         self.user = user
         self.bot = bot
         self.guild = guild
         self.parent_category_id = parent_category_id
+        self.page = page
 
         super().__init__(
             placeholder="Загрузка...",
             options=[discord.SelectOption(label="Загрузка...", value="loading")],
-            custom_id=f"preset_cat_select_{parent_category_id or 'root'}",
+            custom_id=f"preset_cat_select_{parent_category_id or 'root'}_{page}",
             row=1
         )
 
@@ -186,26 +193,41 @@ class PresetCategorySelect(discord.ui.Select):
                     self.parent_category_id
                 )
 
+        # Сохраняем полные списки для пагинации
+        self.all_categories = list(categories)
+        self.all_presets = list(uncategorized)
+
         options = []
 
         # Кнопка "Назад" если не корневой уровень
+        back_option_count = 0
         if self.parent_category_id is not None:
             options.append(discord.SelectOption(
                 label="◀ Назад",
                 value="back",
                 emoji="↩"
             ))
+            back_option_count = 1
 
-        # Добавляем категории
-        for cat in categories[:12]:
+        # Вычисляем количество элементов на странице
+        items_per_page = 20
+
+        # Сначала показываем все категории (они не пагинируются)
+        for cat in categories:
             options.append(discord.SelectOption(
                 label=cat['name'][:100],
                 value=f"cat_{cat['category_id']}",
                 emoji="📁"
             ))
 
-        # Добавляем пресеты
-        for preset in uncategorized[:12]:
+        # Вычисляем offset и limit для пресетов с учетом категорий и кнопки "Назад"
+        max_options = 25 - back_option_count - len(categories)
+        start_idx = self.page * max_options
+        end_idx = start_idx + max_options
+
+        # Добавляем пресеты для текущей страницы
+        presets_on_page = uncategorized[start_idx:end_idx]
+        for preset in presets_on_page:
             description = preset.get('description') or "Нет описания"
             if len(description) > 100:
                 description = description[:97] + "..."
@@ -215,7 +237,7 @@ class PresetCategorySelect(discord.ui.Select):
                 label=preset['name'][:100],
                 value=f"preset_{preset['preset_id']}",
                 description=description,
-                emoji=emoji or "🎭"
+                emoji=emoji
             ))
 
         if not options:
@@ -226,7 +248,16 @@ class PresetCategorySelect(discord.ui.Select):
             ))
 
         self.options = options
-        self.placeholder = "Выберите категорию или пресет..."
+
+        # Вычисляем общее количество страниц
+        total_presets = len(uncategorized)
+        self.total_pages = (total_presets + max_options - 1) // max_options if total_presets > 0 else 1
+
+        # Обновляем placeholder с информацией о странице
+        if self.total_pages > 1:
+            self.placeholder = f"Выберите категорию или пресет... (Стр. {self.page + 1}/{self.total_pages})"
+        else:
+            self.placeholder = "Выберите категорию или пресет..."
 
     async def callback(self, interaction: discord.Interaction):
         selected_value = self.values[0]
@@ -257,9 +288,19 @@ class PresetCategorySelect(discord.ui.Select):
             new_select = PresetCategorySelect(self.embed, self.user, self.bot, self.guild, new_parent_id)
             await new_select.load_options()
 
-            # Заменяем select в view
-            self.view.remove_item(self)
+            # Удаляем старый select и кнопки пагинации
+            items_to_remove = [item for item in self.view.children if isinstance(item, (PresetCategorySelect, PresetPrevPageButton, PresetNextPageButton))]
+            for item in items_to_remove:
+                self.view.remove_item(item)
+
+            # Добавляем новый select
             self.view.add_item(new_select)
+
+            # Добавляем кнопки пагинации если нужно
+            if new_select.total_pages > 1:
+                self.view.add_item(PresetPrevPageButton(new_select))
+                self.view.add_item(PresetNextPageButton(new_select))
+
             await interaction.response.edit_message(view=self.view)
             return
 
@@ -269,9 +310,19 @@ class PresetCategorySelect(discord.ui.Select):
             new_select = PresetCategorySelect(self.embed, self.user, self.bot, self.guild, category_id)
             await new_select.load_options()
 
-            # Заменяем select в view
-            self.view.remove_item(self)
+            # Удаляем старый select и кнопки пагинации
+            items_to_remove = [item for item in self.view.children if isinstance(item, (PresetCategorySelect, PresetPrevPageButton, PresetNextPageButton))]
+            for item in items_to_remove:
+                self.view.remove_item(item)
+
+            # Добавляем новый select
             self.view.add_item(new_select)
+
+            # Добавляем кнопки пагинации если нужно
+            if new_select.total_pages > 1:
+                self.view.add_item(PresetPrevPageButton(new_select))
+                self.view.add_item(PresetNextPageButton(new_select))
+
             await interaction.response.edit_message(view=self.view)
             return
 
@@ -328,6 +379,90 @@ class PresetCategorySelect(discord.ui.Select):
                 view=confirm_view,
                 ephemeral=True
             )
+
+
+# ============== КНОПКИ ПАГИНАЦИИ ==============
+
+class PresetPrevPageButton(discord.ui.Button):
+    """Кнопка для перехода на предыдущую страницу пресетов"""
+
+    def __init__(self, select: PresetCategorySelect):
+        super().__init__(
+            label="◀ Пред",
+            style=discord.ButtonStyle.gray,
+            custom_id=f"preset_prev_{select.parent_category_id or 'root'}_{select.page}",
+            row=2,
+            disabled=(select.page == 0)
+        )
+        self.select = select
+
+    async def callback(self, interaction: discord.Interaction):
+        # Создаем новый select с предыдущей страницей
+        new_select = PresetCategorySelect(
+            self.select.embed,
+            self.select.user,
+            self.select.bot,
+            self.select.guild,
+            self.select.parent_category_id,
+            self.select.page - 1
+        )
+        await new_select.load_options()
+
+        # Удаляем старый select и кнопки пагинации
+        items_to_remove = [item for item in self.view.children if isinstance(item, (PresetCategorySelect, PresetPrevPageButton, PresetNextPageButton))]
+        for item in items_to_remove:
+            self.view.remove_item(item)
+
+        # Добавляем новый select
+        self.view.add_item(new_select)
+
+        # Добавляем новые кнопки пагинации если нужно
+        if new_select.total_pages > 1:
+            self.view.add_item(PresetPrevPageButton(new_select))
+            self.view.add_item(PresetNextPageButton(new_select))
+
+        await interaction.response.edit_message(view=self.view)
+
+
+class PresetNextPageButton(discord.ui.Button):
+    """Кнопка для перехода на следующую страницу пресетов"""
+
+    def __init__(self, select: PresetCategorySelect):
+        super().__init__(
+            label="След ▶",
+            style=discord.ButtonStyle.gray,
+            custom_id=f"preset_next_{select.parent_category_id or 'root'}_{select.page}",
+            row=2,
+            disabled=(select.page >= select.total_pages - 1)
+        )
+        self.select = select
+
+    async def callback(self, interaction: discord.Interaction):
+        # Создаем новый select с следующей страницей
+        new_select = PresetCategorySelect(
+            self.select.embed,
+            self.select.user,
+            self.select.bot,
+            self.select.guild,
+            self.select.parent_category_id,
+            self.select.page + 1
+        )
+        await new_select.load_options()
+
+        # Удаляем старый select и кнопки пагинации
+        items_to_remove = [item for item in self.view.children if isinstance(item, (PresetCategorySelect, PresetPrevPageButton, PresetNextPageButton))]
+        for item in items_to_remove:
+            self.view.remove_item(item)
+
+        # Добавляем новый select
+        self.view.add_item(new_select)
+
+        # Добавляем новые кнопки пагинации если нужно
+        if new_select.total_pages > 1:
+            self.view.add_item(PresetPrevPageButton(new_select))
+            self.view.add_item(PresetNextPageButton(new_select))
+
+        await interaction.response.edit_message(view=self.view)
 
 
 # ============== ПОДТВЕРЖДЕНИЕ ПРЕСЕТА ==============
@@ -749,7 +884,7 @@ class CategoryContentSelect(discord.ui.Select):
         # Добавляем пресеты
         for preset in presets[:12]:
             emoji_str = preset.get('emoji')
-            emoji = "🎭"
+            emoji = None
             if emoji_str:
                 parsed_emoji = parse_emoji(emoji_str)
                 if parsed_emoji:
@@ -833,13 +968,13 @@ class CategoryContentSelect(discord.ui.Select):
                     role_names.append(f"❌ ID {role_id} (удалена)")
 
             emoji = preset.get('emoji')
-            emoji_str = '🎭'
+            emoji_str = ''
             if emoji:
                 parsed_emoji = parse_emoji(emoji, interaction.guild)
                 if parsed_emoji:
-                    emoji_str = str(parsed_emoji)
+                    emoji_str = f"{str(parsed_emoji)} "
             embed = discord.Embed(
-                title=f"{emoji_str} {preset['name']}",
+                title=f"{emoji_str}{preset['name']}",
                 description="Выберите действие для редактирования пресета",
                 color=discord.Color.blue()
             )
@@ -1874,7 +2009,7 @@ class PresetManagementSelect(discord.ui.Select):
         # Остальные пресеты для редактирования
         for preset in presets[:24]:
             emoji_str = preset.get('emoji')
-            emoji = "🎭"
+            emoji = None
             if emoji_str:
                 parsed_emoji = parse_emoji(emoji_str, guild)
                 if parsed_emoji:
