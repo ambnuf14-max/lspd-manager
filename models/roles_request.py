@@ -19,12 +19,15 @@ class PersistentView(discord.ui.View):
         self.bot = bot
         self._presets_loaded = False
 
-        # Основные кнопки
+        # Кнопка добавления пресета (row=0)
+        self.add_item(AddPresetButton(bot))
+
+        # Основные кнопки (row=2)
         self.add_item(DoneButton(embed, user))
         self.add_item(DropButton(embed, user))
 
     async def load_presets(self):
-        """Загрузка пресетов из БД и добавление кнопок.
+        """Загрузка пресетов из БД и добавление Select Menu.
         ВАЖНО: Вызывать ПЕРЕД отправкой view в Discord!"""
         if self._presets_loaded:
             return  # Уже загружены
@@ -35,44 +38,75 @@ class PersistentView(discord.ui.View):
                     "SELECT preset_id, name, role_ids FROM role_presets ORDER BY name"
                 )
 
-            # Лимит Discord: 25 компонентов, у нас уже 2 (Done + Drop)
-            # Максимум 23 пресета, но лучше ~20 для удобства
-            for preset in presets[:20]:
-                self.add_item(PresetButton(
-                    preset_id=preset['preset_id'],
-                    preset_name=preset['name'],
-                    role_ids=preset['role_ids'],
-                    embed=self.embed,
-                    user=self.user
-                ))
+            if presets:
+                # Добавляем Select Menu с пресетами (row=1)
+                self.add_item(PresetSelect(presets[:25], self.embed, self.user))
+                logger.info(f"Загружено {len(presets[:25])} пресетов для запроса от {self.user.display_name}")
 
             self._presets_loaded = True
-            logger.info(f"Загружено {len(presets[:20])} пресетов для запроса от {self.user.display_name}")
         except Exception as e:
             logger.error(f"Ошибка при загрузке пресетов: {e}", exc_info=True)
 
 
-class PresetButton(discord.ui.Button):
-    """Кнопка для применения пресета ролей"""
+class AddPresetButton(discord.ui.Button):
+    """Кнопка для добавления нового пресета"""
 
-    def __init__(self, preset_id: int, preset_name: str, role_ids: list, embed: discord.Embed, user: discord.User):
+    def __init__(self, bot):
         super().__init__(
-            label=preset_name,
-            style=discord.ButtonStyle.blurple,
-            custom_id=f"preset_{preset_id}"
+            label="Добавить пресет",
+            style=discord.ButtonStyle.success,
+            emoji="➕",
+            custom_id="add_preset_btn",
+            row=0
         )
-        self.preset_id = preset_id
-        self.preset_name = preset_name
-        self.role_ids = role_ids
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        from cogs.presets import PresetCreateModal
+        modal = PresetCreateModal(self.bot, interaction.guild)
+        await interaction.response.send_modal(modal)
+
+
+class PresetSelect(discord.ui.Select):
+    """Выпадающий список для выбора пресета"""
+
+    def __init__(self, presets: list, embed: discord.Embed, user: discord.User):
+        self.presets_data = {str(p['preset_id']): p for p in presets}
         self.embed = embed
         self.user = user
 
+        options = [
+            discord.SelectOption(
+                label=preset['name'][:100],
+                value=str(preset['preset_id']),
+                description=f"Ролей: {len(preset['role_ids'])}"
+            )
+            for preset in presets[:25]
+        ]
+
+        super().__init__(
+            placeholder="Выберите пресет для применения...",
+            options=options,
+            custom_id="preset_select",
+            row=1
+        )
+
     async def callback(self, interaction: discord.Interaction):
-        """Обработка нажатия на кнопку пресета"""
+        """Обработка выбора пресета"""
+        preset_id = self.values[0]
+        preset = self.presets_data.get(preset_id)
+
+        if not preset:
+            await interaction.response.send_message("❌ Пресет не найден.", ephemeral=True)
+            return
+
         guild = interaction.guild
         member = guild.get_member(self.user.id)
 
-        logger.info(f"Пресет '{self.preset_name}' применяется к {self.user.display_name} ({self.user.id}) администратором {interaction.user.display_name}")
+        preset_name = preset['name']
+        role_ids = preset['role_ids']
+
+        logger.info(f"Пресет '{preset_name}' применяется к {self.user.display_name} ({self.user.id}) администратором {interaction.user.display_name}")
 
         if not member:
             logger.warning(f"Пользователь {self.user.display_name} ({self.user.id}) не найден на сервере")
@@ -86,7 +120,7 @@ class PresetButton(discord.ui.Button):
         success_roles = []
         failed_roles = []
 
-        for role_id in self.role_ids:
+        for role_id in role_ids:
             role = guild.get_role(role_id)
             if not role:
                 failed_roles.append(f"ID {role_id} (роль не найдена)")
@@ -94,7 +128,7 @@ class PresetButton(discord.ui.Button):
                 continue
 
             try:
-                await member.add_roles(role, reason=f"Пресет '{self.preset_name}' применен {interaction.user.display_name}")
+                await member.add_roles(role, reason=f"Пресет '{preset_name}' применен {interaction.user.display_name}")
                 success_roles.append(role.name)
                 logger.info(f"Роль '{role.name}' выдана пользователю {member.display_name}")
             except discord.Forbidden:
@@ -106,14 +140,14 @@ class PresetButton(discord.ui.Button):
 
         # Обновление embed
         self.embed.color = discord.Color.green()
-        footer_text = f"Пресет '{self.preset_name}' применен пользователем {interaction.user.display_name}"
+        footer_text = f"Пресет '{preset_name}' применен пользователем {interaction.user.display_name}"
 
         if failed_roles:
             footer_text += f"\n⚠️ Не удалось выдать: {', '.join(failed_roles)}"
 
         self.embed.set_footer(text=footer_text)
 
-        # Очистка кнопок и обновление сообщения
+        # Очистка компонентов и обновление сообщения
         self.view.clear_items()
         await interaction.message.edit(embed=self.embed, view=self.view)
 
@@ -136,7 +170,7 @@ class PresetButton(discord.ui.Button):
             pass
 
         # Уведомление администратора
-        response_msg = f"✅ Пресет '{self.preset_name}' применен для {self.user.display_name}!"
+        response_msg = f"✅ Пресет '{preset_name}' применен для {self.user.display_name}!"
         if success_roles:
             response_msg += f"\n✅ Выдано: {', '.join(success_roles)}"
         if failed_roles:
@@ -182,23 +216,26 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Защита от спама: кулдаун 10 минут между запросами
-        async with interaction.client.db_pool.acquire() as conn:
-            last_request = await conn.fetchrow(
-                "SELECT created_at FROM requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
-                self.user.id
-            )
+        # Защита от спама: кулдаун 10 минут между запросами (не для админов)
+        is_admin = interaction.user.guild_permissions.administrator
 
-        if last_request and last_request['created_at']:
-            time_diff = datetime.now() - last_request['created_at']
-            cooldown_minutes = 10
-            if time_diff.total_seconds() < cooldown_minutes * 60:
-                remaining = cooldown_minutes - int(time_diff.total_seconds() / 60)
-                await interaction.response.send_message(
-                    f"❌ Подождите ещё {remaining} мин. перед созданием нового запроса.",
-                    ephemeral=True
+        if not is_admin:
+            async with interaction.client.db_pool.acquire() as conn:
+                last_request = await conn.fetchrow(
+                    "SELECT created_at FROM requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
+                    self.user.id
                 )
-                return
+
+            if last_request and last_request['created_at']:
+                time_diff = datetime.now() - last_request['created_at']
+                cooldown_minutes = 10
+                if time_diff.total_seconds() < cooldown_minutes * 60:
+                    remaining = cooldown_minutes - int(time_diff.total_seconds() / 60)
+                    await interaction.response.send_message(
+                        f"❌ Подождите ещё {remaining} мин. перед созданием нового запроса.",
+                        ephemeral=True
+                    )
+                    return
 
         channel = interaction.guild.get_channel(ADM_ROLES_CH)
 
@@ -328,7 +365,11 @@ class ButtonView(discord.ui.View):
 class DropButton(discord.ui.Button):
     def __init__(self, embed: discord.Embed, user: discord.User):
         super().__init__(
-            label="Отклонить", style=discord.ButtonStyle.red, custom_id="drop_button"
+            label="Отклонить",
+            style=discord.ButtonStyle.red,
+            custom_id="drop_button",
+            emoji="❌",
+            row=2
         )
         self.embed = embed
         self.user = user
@@ -342,7 +383,11 @@ class DropButton(discord.ui.Button):
 class DoneButton(discord.ui.Button):
     def __init__(self, embed: discord.Embed, user: discord.User):
         super().__init__(
-            label="Выполнено", style=discord.ButtonStyle.green, custom_id="done_button"
+            label="Выполнено",
+            style=discord.ButtonStyle.green,
+            custom_id="done_button",
+            emoji="✅",
+            row=2
         )
         self.embed = embed
         self.user = user
