@@ -10,6 +10,13 @@ from bot.logger import get_logger
 
 logger = get_logger('roles_request')
 
+# Импорт рангов LSPD для автоматического создания
+try:
+    from cogs.ranks import LSPD_RANKS, RANK_TO_GROUP_ROLE
+except ImportError:
+    LSPD_RANKS = []
+    RANK_TO_GROUP_ROLE = {}
+
 
 # ============== РАБОТА С ЭМОДЗИ ==============
 
@@ -780,13 +787,9 @@ class CategoryManagementSelect(discord.ui.Select):
         selected_value = self.values[0]
 
         if selected_value == "create_category":
-            # Показываем выбор: корневая или подкатегория
-            view = CreateCategoryTypeView(self.bot, self.parent_view)
-            await interaction.response.edit_message(
-                content="**Какую категорию создать?**",
-                embed=None,
-                view=view
-            )
+            # Сразу открываем модальное окно для создания корневой категории
+            modal = CategoryCreateModal(self.bot, self.parent_view, parent_id=None)
+            await interaction.response.send_modal(modal)
             return
 
         category = self.categories_data.get(selected_value)
@@ -833,7 +836,7 @@ class CategoryContentView(discord.ui.View):
             # Загружаем подкатегории
             self.subcategories = await conn.fetch(
                 """
-                SELECT category_id, name, emoji,
+                SELECT category_id, name, emoji, parent_id,
                        (SELECT COUNT(*) FROM role_presets WHERE category_id = c.category_id) as preset_count,
                        (SELECT COUNT(*) FROM preset_categories WHERE parent_id = c.category_id) as subcategory_count
                 FROM preset_categories c
@@ -857,7 +860,11 @@ class CategoryContentView(discord.ui.View):
         self.clear_items()
         select = CategoryContentSelect(self.subcategories, self.presets, self.bot, self)
         self.add_item(select)
-        self.add_item(AddSubcategoryButton(self.category, self.bot, self))
+
+        # Кнопка "Добавить подкатегорию" только для корневых категорий (parent_id IS NULL)
+        if self.category.get('parent_id') is None:
+            self.add_item(AddSubcategoryButton(self.category, self.bot, self))
+
         self.add_item(AddPresetButton(self.category, self.bot, self.guild, self))
         self.add_item(EditCategoryButton(self.category, self.bot, self))
         self.add_item(DeleteCategoryButton(self.category, self.bot, self))
@@ -1298,6 +1305,20 @@ class CategoryCreateModal(discord.ui.Modal, title="Создать категор
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
+            # Проверка: если указан parent_id, убедимся что это корневая категория (max 2 уровня)
+            if self.parent_id is not None:
+                async with self.bot.db_pool.acquire() as conn:
+                    parent_category = await conn.fetchrow(
+                        "SELECT parent_id FROM preset_categories WHERE category_id = $1",
+                        self.parent_id
+                    )
+                    if parent_category and parent_category['parent_id'] is not None:
+                        await interaction.response.send_message(
+                            "❌ Нельзя создать подкатегорию подкатегории! Максимум 2 уровня: Категория → Подкатегория.",
+                            ephemeral=True
+                        )
+                        return
+
             emoji_input = self.emoji.value.strip() if self.emoji.value else None
             # Нормализуем эмодзи для сохранения в БД
             emoji_value = normalize_emoji_for_storage(emoji_input, interaction.guild) if emoji_input else None
@@ -1322,15 +1343,52 @@ class CategoryCreateModal(discord.ui.Modal, title="Создать категор
                     )
                     return
 
+            ranks_created_count = 0  # Счетчик созданных рангов
+
             async with self.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO preset_categories (name, parent_id, created_by, created_at, emoji, department_role_id) VALUES ($1, $2, $3, NOW(), $4, $5)",
+                # Создаем категорию и получаем её ID
+                new_category_id = await conn.fetchval(
+                    "INSERT INTO preset_categories (name, parent_id, created_by, created_at, emoji, department_role_id) "
+                    "VALUES ($1, $2, $3, NOW(), $4, $5) RETURNING category_id",
                     self.category_name.value,
                     self.parent_id,
                     interaction.user.id,
                     emoji_value,
                     department_role_id
                 )
+
+                # Если это подкатегория (parent_id не None), автоматически создаём ранги
+                if self.parent_id is not None and LSPD_RANKS:
+                    for i, rank_name in enumerate(LSPD_RANKS):
+                        # Ищем роль Discord по названию ранга
+                        role = discord.utils.get(interaction.guild.roles, name=rank_name)
+                        if not role:
+                            logger.warning(f"Роль '{rank_name}' не найдена при создании подкатегории '{self.category_name.value}'")
+                            continue
+
+                        # Определяем групповую роль
+                        group_role_name = RANK_TO_GROUP_ROLE.get(rank_name)
+                        group_role_id = None
+                        if group_role_name:
+                            group_role = discord.utils.get(interaction.guild.roles, name=group_role_name)
+                            if group_role:
+                                group_role_id = group_role.id
+
+                        # Создаём пресет ранга
+                        await conn.execute(
+                            "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, category_id, rank_group_role_id, sort_order) "
+                            "VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7)",
+                            rank_name,
+                            [role.id],
+                            interaction.user.id,
+                            f"Ранг LSPD: {rank_name}",
+                            new_category_id,
+                            group_role_id,
+                            i  # Порядок сортировки
+                        )
+                        ranks_created_count += 1
+
+                    logger.info(f"Создано {ranks_created_count} рангов для подкатегории '{self.category_name.value}'")
 
             logger.info(f"Категория '{self.category_name.value}' создана пользователем {interaction.user.display_name}")
 
@@ -1351,9 +1409,12 @@ class CategoryCreateModal(discord.ui.Modal, title="Создать категор
                     parsed_parent_emoji = parse_emoji(parent_emoji, interaction.guild)
                     if parsed_parent_emoji:
                         parent_emoji_str = str(parsed_parent_emoji)
+                description_text = f"Подкатегория {emoji_str}**«{self.category_name.value}»** создана!"
+                if ranks_created_count > 0:
+                    description_text += f"\n\nАвтоматически созданы ранги: {ranks_created_count} из {len(LSPD_RANKS)}"
                 embed = discord.Embed(
                     title=f"{parent_emoji_str} {self.parent_view.category['name']}",
-                    description=f"Подкатегория {emoji_str}**«{self.category_name.value}»** создана!",
+                    description=description_text,
                     color=discord.Color.green()
                 )
                 await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
