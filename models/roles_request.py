@@ -19,10 +19,7 @@ class PersistentView(discord.ui.View):
         self.bot = bot
         self._presets_loaded = False
 
-        # Кнопка добавления пресета (row=0)
-        self.add_item(AddPresetButton(bot))
-
-        # Основные кнопки (row=2)
+        # Основные кнопки (row=0) - сбоку
         self.add_item(DoneButton(embed, user))
         self.add_item(DropButton(embed, user))
 
@@ -38,51 +35,44 @@ class PersistentView(discord.ui.View):
                     "SELECT preset_id, name, role_ids FROM role_presets ORDER BY name"
                 )
 
+            # Добавляем Select Menu с пресетами (row=1), включая опцию "Добавить пресет"
+            self.add_item(PresetSelect(presets[:24], self.embed, self.user, self.bot))
             if presets:
-                # Добавляем Select Menu с пресетами (row=1)
-                self.add_item(PresetSelect(presets[:25], self.embed, self.user))
-                logger.info(f"Загружено {len(presets[:25])} пресетов для запроса от {self.user.display_name}")
+                logger.info(f"Загружено {len(presets[:24])} пресетов для запроса от {self.user.display_name}")
 
             self._presets_loaded = True
         except Exception as e:
             logger.error(f"Ошибка при загрузке пресетов: {e}", exc_info=True)
 
 
-class AddPresetButton(discord.ui.Button):
-    """Кнопка для добавления нового пресета"""
-
-    def __init__(self, bot):
-        super().__init__(
-            label="Добавить пресет",
-            style=discord.ButtonStyle.success,
-            emoji="➕",
-            custom_id="add_preset_btn",
-            row=0
-        )
-        self.bot = bot
-
-    async def callback(self, interaction: discord.Interaction):
-        from cogs.presets import PresetCreateModal
-        modal = PresetCreateModal(self.bot, interaction.guild)
-        await interaction.response.send_modal(modal)
-
-
 class PresetSelect(discord.ui.Select):
     """Выпадающий список для выбора пресета"""
 
-    def __init__(self, presets: list, embed: discord.Embed, user: discord.User):
+    def __init__(self, presets: list, embed: discord.Embed, user: discord.User, bot):
         self.presets_data = {str(p['preset_id']): p for p in presets}
         self.embed = embed
         self.user = user
+        self.bot = bot
 
+        # Первая опция - добавить пресет
         options = [
+            discord.SelectOption(
+                label="Добавить пресет",
+                value="add_preset",
+                emoji="➕",
+                description="Создать новый пресет ролей"
+            )
+        ]
+
+        # Остальные пресеты
+        options.extend([
             discord.SelectOption(
                 label=preset['name'][:100],
                 value=str(preset['preset_id']),
                 description=f"Ролей: {len(preset['role_ids'])}"
             )
-            for preset in presets[:25]
-        ]
+            for preset in presets[:24]
+        ])
 
         super().__init__(
             placeholder="Выберите пресет для применения...",
@@ -93,8 +83,16 @@ class PresetSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         """Обработка выбора пресета"""
-        preset_id = self.values[0]
-        preset = self.presets_data.get(preset_id)
+        selected_value = self.values[0]
+
+        # Обработка добавления пресета
+        if selected_value == "add_preset":
+            from cogs.presets import PresetCreateModal
+            modal = PresetCreateModal(self.bot, interaction.guild)
+            await interaction.response.send_modal(modal)
+            return
+
+        preset = self.presets_data.get(selected_value)
 
         if not preset:
             await interaction.response.send_message("❌ Пресет не найден.", ephemeral=True)
@@ -103,17 +101,63 @@ class PresetSelect(discord.ui.Select):
         guild = interaction.guild
         member = guild.get_member(self.user.id)
 
-        preset_name = preset['name']
-        role_ids = preset['role_ids']
+        if not member:
+            await interaction.response.send_message(
+                "❌ Пользователь больше не на сервере.",
+                ephemeral=True
+            )
+            return
+
+        # Получаем названия ролей для подтверждения
+        role_names = []
+        for role_id in preset['role_ids']:
+            role = guild.get_role(role_id)
+            if role:
+                role_names.append(role.name)
+            else:
+                role_names.append(f"ID {role_id}")
+
+        # Показываем подтверждение
+        confirm_view = ConfirmPresetView(
+            preset=preset,
+            embed=self.embed,
+            user=self.user,
+            original_message=interaction.message,
+            original_view=self.view
+        )
+
+        await interaction.response.send_message(
+            f"**Выдать пресет «{preset['name']}»?**\n\nРоли: {', '.join(role_names)}",
+            view=confirm_view,
+            ephemeral=True
+        )
+
+
+class ConfirmPresetView(discord.ui.View):
+    """View для подтверждения применения пресета"""
+
+    def __init__(self, preset: dict, embed: discord.Embed, user: discord.User, original_message, original_view):
+        super().__init__(timeout=60)
+        self.preset = preset
+        self.embed = embed
+        self.user = user
+        self.original_message = original_message
+        self.original_view = original_view
+
+    @discord.ui.button(label="Да", style=discord.ButtonStyle.green, emoji="✅")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Подтверждение применения пресета"""
+        guild = interaction.guild
+        member = guild.get_member(self.user.id)
+
+        preset_name = self.preset['name']
+        role_ids = self.preset['role_ids']
 
         logger.info(f"Пресет '{preset_name}' применяется к {self.user.display_name} ({self.user.id}) администратором {interaction.user.display_name}")
 
         if not member:
             logger.warning(f"Пользователь {self.user.display_name} ({self.user.id}) не найден на сервере")
-            await interaction.response.send_message(
-                "❌ Пользователь больше не на сервере.",
-                ephemeral=True
-            )
+            await interaction.response.edit_message(content="❌ Пользователь больше не на сервере.", view=None)
             return
 
         # Выдача ролей из пресета
@@ -147,9 +191,9 @@ class PresetSelect(discord.ui.Select):
 
         self.embed.set_footer(text=footer_text)
 
-        # Очистка компонентов и обновление сообщения
-        self.view.clear_items()
-        await interaction.message.edit(embed=self.embed, view=self.view)
+        # Очистка компонентов и обновление оригинального сообщения
+        self.original_view.clear_items()
+        await self.original_message.edit(embed=self.embed, view=self.original_view)
 
         # Обновление БД
         async with interaction.client.db_pool.acquire() as conn:
@@ -157,7 +201,7 @@ class PresetSelect(discord.ui.Select):
                 "UPDATE requests SET status = 'approved', finished_by = $1, finished_at = $2 WHERE message_id = $3",
                 interaction.user.id,
                 datetime.now(),
-                interaction.message.id
+                self.original_message.id
             )
 
         # Уведомление пользователя
@@ -169,14 +213,19 @@ class PresetSelect(discord.ui.Select):
         except discord.Forbidden:
             pass
 
-        # Уведомление администратора
+        # Обновление ephemeral сообщения
         response_msg = f"✅ Пресет '{preset_name}' применен для {self.user.display_name}!"
         if success_roles:
             response_msg += f"\n✅ Выдано: {', '.join(success_roles)}"
         if failed_roles:
             response_msg += f"\n❌ Ошибки: {', '.join(failed_roles)}"
 
-        await interaction.response.send_message(response_msg, ephemeral=True)
+        await interaction.response.edit_message(content=response_msg, view=None)
+
+    @discord.ui.button(label="Нет", style=discord.ButtonStyle.red, emoji="❌")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Отмена применения пресета"""
+        await interaction.response.edit_message(content="❌ Отменено.", view=None)
 
 
 class FeedbackModal(discord.ui.Modal, title="Получение роли"):
@@ -379,7 +428,7 @@ class DropButton(discord.ui.Button):
             style=discord.ButtonStyle.red,
             custom_id="drop_button",
             emoji="❌",
-            row=2
+            row=0
         )
         self.embed = embed
         self.user = user
@@ -397,7 +446,7 @@ class DoneButton(discord.ui.Button):
             style=discord.ButtonStyle.green,
             custom_id="done_button",
             emoji="✅",
-            row=2
+            row=0
         )
         self.embed = embed
         self.user = user
