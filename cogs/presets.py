@@ -430,10 +430,10 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
     )
 
     emoji = discord.ui.TextInput(
-        label="Эмодзи (одна эмодзи или пусто)",
-        placeholder="Например: 🚔 или оставьте пустым",
+        label="Эмодзи",
+        placeholder="🚔 или ID кастомного: 1234567890",
         required=False,
-        max_length=10
+        max_length=50
     )
 
     role_ids_input = discord.ui.TextInput(

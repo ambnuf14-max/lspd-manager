@@ -1,4 +1,5 @@
 import json
+import re
 import traceback
 from datetime import datetime
 
@@ -8,6 +9,45 @@ from bot.config import ADM_ROLES_CH, PRESET_ADMIN_ROLE_ID
 from bot.logger import get_logger
 
 logger = get_logger('roles_request')
+
+
+# ============== РАБОТА С ЭМОДЗИ ==============
+
+def parse_emoji(emoji_str: str, guild: discord.Guild = None) -> discord.PartialEmoji | str | None:
+    """
+    Парсит строку эмодзи и возвращает объект для использования в Discord.
+
+    Поддерживаемые форматы:
+    - Unicode эмодзи: "🚔"
+    - ID кастомного эмодзи: "1234567890"
+    - Полный формат: "<:name:1234567890>" или "<a:name:1234567890>"
+    """
+    if not emoji_str:
+        return None
+
+    emoji_str = emoji_str.strip()
+
+    # Проверяем полный формат кастомного эмодзи <:name:id> или <a:name:id>
+    custom_match = re.match(r'<(a)?:(\w+):(\d+)>', emoji_str)
+    if custom_match:
+        animated = custom_match.group(1) == 'a'
+        name = custom_match.group(2)
+        emoji_id = int(custom_match.group(3))
+        return discord.PartialEmoji(name=name, id=emoji_id, animated=animated)
+
+    # Проверяем только ID (число)
+    if emoji_str.isdigit():
+        emoji_id = int(emoji_str)
+        # Пытаемся найти эмодзи на сервере для получения имени
+        if guild:
+            emoji = discord.utils.get(guild.emojis, id=emoji_id)
+            if emoji:
+                return discord.PartialEmoji(name=emoji.name, id=emoji.id, animated=emoji.animated)
+        # Если не нашли на сервере, создаём с placeholder именем
+        return discord.PartialEmoji(name='emoji', id=emoji_id)
+
+    # Иначе считаем что это Unicode эмодзи
+    return emoji_str
 
 
 # ============== ПРОВЕРКА ПРАВ ==============
@@ -82,8 +122,8 @@ class PresetSelect(discord.ui.Select):
             if len(description) > 100:
                 description = description[:97] + "..."
 
-            # Эмодзи из БД
-            emoji = preset.get('emoji')
+            # Эмодзи из БД (поддержка кастомных)
+            emoji = parse_emoji(preset.get('emoji'), bot.get_guild(user.guild.id) if hasattr(user, 'guild') else None)
 
             options.append(discord.SelectOption(
                 label=preset['name'][:100],
@@ -347,7 +387,7 @@ class PresetManagementSelect(discord.ui.Select):
 
         # Остальные пресеты для редактирования
         for preset in presets[:24]:
-            emoji = preset.get('emoji')
+            emoji = parse_emoji(preset.get('emoji'), guild)
             description = preset.get('description') or f"Ролей: {len(preset['role_ids'])}"
             if len(description) > 100:
                 description = description[:97] + "..."
@@ -658,10 +698,10 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
     )
 
     emoji = discord.ui.TextInput(
-        label="Эмодзи (одна эмодзи или пусто)",
-        placeholder="Например: 🚔 или оставьте пустым",
+        label="Эмодзи",
+        placeholder="🚔 или ID кастомного: 1234567890",
         required=False,
-        max_length=10
+        max_length=50
     )
 
     role_ids_input = discord.ui.TextInput(
@@ -788,10 +828,11 @@ class PresetEditInfoModal(discord.ui.Modal, title="Редактировать п
         )
 
         self.emoji = discord.ui.TextInput(
-            label="Эмодзи (одна эмодзи или пусто)",
+            label="Эмодзи",
+            placeholder="🚔 или ID кастомного: 1234567890",
             default=preset.get('emoji') or "",
             required=False,
-            max_length=10
+            max_length=50
         )
 
         self.add_item(self.preset_name)
