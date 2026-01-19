@@ -83,11 +83,12 @@ async def is_preset_admin(user: discord.Member) -> bool:
 # ============== ОСНОВНОЙ VIEW ДЛЯ ЗАПРОСА ==============
 
 class PersistentView(discord.ui.View):
-    def __init__(self, embed: discord.Embed, user: discord.User, bot):
+    def __init__(self, embed: discord.Embed, user: discord.User, bot, guild: discord.Guild = None):
         super().__init__(timeout=None)
         self.embed = embed
         self.user = user
         self.bot = bot
+        self.guild = guild
         self._presets_loaded = False
 
         # Основные кнопки (row=0)
@@ -107,7 +108,7 @@ class PersistentView(discord.ui.View):
                 )
 
             if presets:
-                self.add_item(PresetSelect(presets[:24], self.embed, self.user, self.bot))
+                self.add_item(PresetSelect(presets[:24], self.embed, self.user, self.bot, self.guild))
                 logger.info(f"Загружено {len(presets[:24])} пресетов для запроса от {self.user.display_name}")
 
             self._presets_loaded = True
@@ -120,11 +121,12 @@ class PersistentView(discord.ui.View):
 class PresetSelect(discord.ui.Select):
     """Выпадающий список для выбора пресета"""
 
-    def __init__(self, presets: list, embed: discord.Embed, user: discord.User, bot):
+    def __init__(self, presets: list, embed: discord.Embed, user: discord.User, bot, guild: discord.Guild = None):
         self.presets_data = {str(p['preset_id']): p for p in presets}
         self.embed = embed
         self.user = user
         self.bot = bot
+        self.guild = guild
 
         options = []
         for preset in presets[:25]:
@@ -134,7 +136,7 @@ class PresetSelect(discord.ui.Select):
                 description = description[:97] + "..."
 
             # Эмодзи из БД (поддержка кастомных)
-            emoji = parse_emoji(preset.get('emoji'), bot.get_guild(user.guild.id) if hasattr(user, 'guild') else None)
+            emoji = parse_emoji(preset.get('emoji'), guild)
 
             options.append(discord.SelectOption(
                 label=preset['name'][:100],
@@ -985,7 +987,7 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
         embed.add_field(name="Аккаунт создан", value=created_at, inline=True)
         embed.add_field(name="Текущие роли", value=roles_text[:1024], inline=False)
 
-        view = PersistentView(embed, self.user, self.bot)
+        view = PersistentView(embed, self.user, self.bot, interaction.guild)
         await view.load_presets()
 
         message = await channel.send(embed=embed, view=view)

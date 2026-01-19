@@ -99,7 +99,7 @@ async def process_single_request(bot, adm_channel, row):
     try:
         user = await bot.fetch_user(user_id)
         embed = discord.Embed.from_dict(json.loads(embed_data))
-        view = PersistentView(embed, user, bot)
+        view = PersistentView(embed, user, bot, adm_channel.guild)
         await view.load_presets()  # Загрузить пресеты ПЕРЕД обновлением сообщения
         await update_message(adm_channel, message_id, embed, view)
     except Exception as e:
