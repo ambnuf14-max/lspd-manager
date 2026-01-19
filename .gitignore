@@ -1,12 +1,22 @@
+# IDE
+/.idea/
+__pycache__/
+*.pyc
+*.pyo
+
+# Логи
 /discord.log
-/.idea/modules.xml
-/main.py
-/.idea/inspectionProfiles/profiles_settings.xml
-/test.py
-/.idea/inspectionProfiles/Project_Default.xml
-/.idea/encodings.xml
+logs/
+*.log
+
+# Environment
+.env
 /bot/.env
+
+# Credentials
+credentials.json
+
+# Test files
+/main.py
+/test.py
 /bot_db.py
-/.idea/misc.xml
-/.idea/vcs.xml
-/.idea/discord_bot.iml

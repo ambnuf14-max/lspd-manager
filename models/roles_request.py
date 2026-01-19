@@ -1,3 +1,4 @@
+import asyncio
 import json
 import traceback
 from datetime import datetime
@@ -5,22 +6,150 @@ from datetime import datetime
 import discord
 
 from bot.config import ADM_ROLES_CH
+from bot.logger import get_logger
+
+logger = get_logger('roles_request')
 
 
 class PersistentView(discord.ui.View):
-    def __init__(self, embed: discord.Embed, user: discord.User):
+    def __init__(self, embed: discord.Embed, user: discord.User, bot):
         super().__init__(timeout=None)
         self.embed = embed
         self.user = user
+        self.bot = bot
+        self._presets_loaded = False
 
+        # Основные кнопки
         self.add_item(DoneButton(embed, user))
         self.add_item(DropButton(embed, user))
+
+    async def load_presets(self):
+        """Загрузка пресетов из БД и добавление кнопок.
+        ВАЖНО: Вызывать ПЕРЕД отправкой view в Discord!"""
+        if self._presets_loaded:
+            return  # Уже загружены
+
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                presets = await conn.fetch(
+                    "SELECT preset_id, name, role_ids FROM role_presets ORDER BY name"
+                )
+
+            # Лимит Discord: 25 компонентов, у нас уже 2 (Done + Drop)
+            # Максимум 23 пресета, но лучше ~20 для удобства
+            for preset in presets[:20]:
+                self.add_item(PresetButton(
+                    preset_id=preset['preset_id'],
+                    preset_name=preset['name'],
+                    role_ids=preset['role_ids'],
+                    embed=self.embed,
+                    user=self.user
+                ))
+
+            self._presets_loaded = True
+            logger.info(f"Загружено {len(presets[:20])} пресетов для запроса от {self.user.display_name}")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке пресетов: {e}", exc_info=True)
+
+
+class PresetButton(discord.ui.Button):
+    """Кнопка для применения пресета ролей"""
+
+    def __init__(self, preset_id: int, preset_name: str, role_ids: list, embed: discord.Embed, user: discord.User):
+        super().__init__(
+            label=preset_name,
+            style=discord.ButtonStyle.blurple,
+            custom_id=f"preset_{preset_id}"
+        )
+        self.preset_id = preset_id
+        self.preset_name = preset_name
+        self.role_ids = role_ids
+        self.embed = embed
+        self.user = user
+
+    async def callback(self, interaction: discord.Interaction):
+        """Обработка нажатия на кнопку пресета"""
+        guild = interaction.guild
+        member = guild.get_member(self.user.id)
+
+        logger.info(f"Пресет '{self.preset_name}' применяется к {self.user.display_name} ({self.user.id}) администратором {interaction.user.display_name}")
+
+        if not member:
+            logger.warning(f"Пользователь {self.user.display_name} ({self.user.id}) не найден на сервере")
+            await interaction.response.send_message(
+                "❌ Пользователь больше не на сервере.",
+                ephemeral=True
+            )
+            return
+
+        # Выдача ролей из пресета
+        success_roles = []
+        failed_roles = []
+
+        for role_id in self.role_ids:
+            role = guild.get_role(role_id)
+            if not role:
+                failed_roles.append(f"ID {role_id} (роль не найдена)")
+                logger.warning(f"Роль с ID {role_id} не найдена на сервере")
+                continue
+
+            try:
+                await member.add_roles(role, reason=f"Пресет '{self.preset_name}' применен {interaction.user.display_name}")
+                success_roles.append(role.name)
+                logger.info(f"Роль '{role.name}' выдана пользователю {member.display_name}")
+            except discord.Forbidden:
+                failed_roles.append(f"{role.name} (нет прав)")
+                logger.error(f"Нет прав для выдачи роли '{role.name}' пользователю {member.display_name}")
+            except discord.HTTPException as e:
+                failed_roles.append(f"{role.name} (ошибка: {e})")
+                logger.error(f"HTTP ошибка при выдаче роли '{role.name}': {e}")
+
+        # Обновление embed
+        self.embed.color = discord.Color.green()
+        footer_text = f"Пресет '{self.preset_name}' применен пользователем {interaction.user.display_name}"
+
+        if failed_roles:
+            footer_text += f"\n⚠️ Не удалось выдать: {', '.join(failed_roles)}"
+
+        self.embed.set_footer(text=footer_text)
+
+        # Очистка кнопок и обновление сообщения
+        self.view.clear_items()
+        await interaction.message.edit(embed=self.embed, view=self.view)
+
+        # Обновление БД
+        async with interaction.client.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE requests SET status = 'approved', finished_by = $1, finished_at = $2 WHERE message_id = $3",
+                interaction.user.id,
+                datetime.now(),
+                interaction.message.id
+            )
+
+        # Уведомление пользователя
+        try:
+            msg = f"✅ Ваш запрос на получение ролей был одобрен!\nВыданы роли: {', '.join(success_roles)}"
+            if failed_roles:
+                msg += f"\n\n⚠️ Некоторые роли не были выданы автоматически, обратитесь к администратору."
+            await self.user.send(msg)
+        except discord.Forbidden:
+            pass
+
+        # Уведомление администратора
+        response_msg = f"✅ Пресет '{self.preset_name}' применен для {self.user.display_name}!"
+        if success_roles:
+            response_msg += f"\n✅ Выдано: {', '.join(success_roles)}"
+        if failed_roles:
+            response_msg += f"\n❌ Ошибки: {', '.join(failed_roles)}"
+
+        await interaction.response.send_message(response_msg, ephemeral=True)
 
 
 class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = None
+        self.bot = None
 
     info = discord.ui.TextInput(
         label="Информация!!!!",
@@ -53,6 +182,21 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        # Защита от спама: проверка на активные запросы
+        async with interaction.client.db_pool.acquire() as conn:
+            active_request = await conn.fetchrow(
+                "SELECT message_id FROM requests WHERE user_id = $1 AND status = 'pending'",
+                self.user.id
+            )
+
+        if active_request:
+            await interaction.response.send_message(
+                f"❌ У вас уже есть активный запрос (ID: {active_request['message_id']})!\n"
+                f"Дождитесь его обработки перед созданием нового.",
+                ephemeral=True
+            )
+            return
+
         channel = interaction.guild.get_channel(ADM_ROLES_CH)
 
         embed = discord.Embed(
@@ -73,7 +217,8 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
             url=f"https://discord.com/users/{self.user.id}",
         )
 
-        view = PersistentView(embed, self.user)
+        view = PersistentView(embed, self.user, self.bot)
+        await view.load_presets()  # Загрузить пресеты ПЕРЕД отправкой
 
         message = await channel.send(embed=embed, view=view)
 
@@ -159,8 +304,9 @@ class DropModal(discord.ui.Modal, title="Причина отказа"):
 
 
 class ButtonView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, bot):
         super().__init__(timeout=None)
+        self.bot = bot
 
     @discord.ui.button(
         label="Получить роли",
@@ -172,6 +318,7 @@ class ButtonView(discord.ui.View):
     ):
         feedback_modal = FeedbackModal()
         feedback_modal.user = interaction.user
+        feedback_modal.bot = self.bot
         await interaction.response.send_modal(feedback_modal)
 
 

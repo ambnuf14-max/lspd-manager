@@ -4,6 +4,8 @@ from datetime import datetime
 import discord
 from discord.ext import tasks
 
+from bot.config import FTO_ROLE_NAME, INTERN_ROLE_NAME, FTO_QUEUE_CLEANUP_HOURS, FTO_QUEUE_CHECK_MINUTES
+
 channel_id = None
 message_id = None
 
@@ -16,7 +18,7 @@ class FTOView(discord.ui.View):
         self.add_item(EnterQueue())
         self.add_item(LeaveButton())
 
-    @tasks.loop(minutes=1)  # Задача запускается каждую минуту
+    @tasks.loop(minutes=FTO_QUEUE_CHECK_MINUTES)
     async def cleanup_task(self):
         """Очистка устаревших записей из очереди."""
         try:
@@ -32,7 +34,7 @@ class FTOView(discord.ui.View):
     async def fetch_expired_entries(conn):
         """Получение устаревших записей из базы данных."""
         return await conn.fetch(
-            "SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - INTERVAL '3 hours'"
+            f"SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - INTERVAL '{FTO_QUEUE_CLEANUP_HOURS} hours'"
         )
 
     async def process_expired_entry(self, conn, entry):
@@ -148,11 +150,11 @@ class EnterQueue(discord.ui.Button):
             message_id = interaction.message.id
 
             fto_role = discord.utils.find(
-                lambda r: r.name == "OO: Field Training Officer",
+                lambda r: r.name == FTO_ROLE_NAME,
                 interaction.guild.roles,
             )
             intern_role = discord.utils.find(
-                lambda r: r.name == "Police Officer I", interaction.guild.roles
+                lambda r: r.name == INTERN_ROLE_NAME, interaction.guild.roles
             )
 
             if (

@@ -6,18 +6,14 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from bot.config import GSHEET_UPDATE_TIMES
 from events.update_gsheet import update_roles
 
 
 class gSheets(commands.Cog):
     moscow_tz = ZoneInfo("Europe/Moscow")
 
-    times = [
-        datetime.time(hour=6, tzinfo=moscow_tz),
-        datetime.time(hour=12, tzinfo=moscow_tz),
-        datetime.time(hour=18, tzinfo=moscow_tz),
-        datetime.time(hour=23, tzinfo=moscow_tz),
-    ]
+    times = [datetime.time(hour=hour, tzinfo=moscow_tz) for hour in GSHEET_UPDATE_TIMES]
 
     def __init__(self, bot):
         self.bot = bot
@@ -81,15 +77,6 @@ class gSheets(commands.Cog):
                 "❌ Произошла ошибка при выполнении команды.", ephemeral=True
             )
             traceback.print_exception(type(error), error, error.__traceback__)
-
-    @commands.Cog.listener()
-    async def on_guild_available(self, guild: discord.Guild):
-        """Автоматическая регистрация слэш-команд при старте бота"""
-        # self.bot.tree.clear_commands(guild=guild)
-        self.bot.tree.add_command(self.update, guild=guild)
-        await self.bot.tree.sync(guild=guild)
-        print(f"Slash commands synced for {guild.name}")
-
 
 async def setup(bot):
     await bot.add_cog(gSheets(bot))

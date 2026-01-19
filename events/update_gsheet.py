@@ -5,9 +5,13 @@ from discord import Member
 from oauth2client.service_account import ServiceAccountCredentials
 
 from bot import config
-
-SHEET_NAME = "LSPD Faction by Moon"
-JSON_KEYFILE = "credentials.json"
+from bot.config import (
+    GOOGLE_SHEET_NAME,
+    GOOGLE_CREDENTIALS_FILE,
+    GSHEET_WORKSHEET_NAME,
+    GSHEET_USERNAME_COLUMN,
+    GSHEET_UPDATE_COLUMN
+)
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
@@ -16,9 +20,9 @@ scope = [
 
 async def update_roles(bot):
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_KEYFILE, scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_FILE, scope)
         client = gspread.authorize(creds)
-        sheet = client.open(SHEET_NAME).worksheet("Таблица состава")
+        sheet = client.open(GOOGLE_SHEET_NAME).worksheet(GSHEET_WORKSHEET_NAME)
         data = sheet.get_all_values()
 
         guild = bot.get_guild(config.GUILD.id)
@@ -32,9 +36,7 @@ async def update_roles(bot):
         requests = []
         for member in members:
             for i, row in enumerate(data):
-                discord_username = row[
-                    20
-                ]  # Предположим, что никнейм Discord находится во 21 столбце (индекс 20)
+                discord_username = row[GSHEET_USERNAME_COLUMN]
                 if discord_username == str(member):
                     roles = [
                         role.name for role in member.roles if role.name != "@everyone"
@@ -48,7 +50,7 @@ async def update_roles(bot):
                                         "sheetId": sheet.id,
                                         "startRowIndex": i,  # Индексация с 0
                                         "endRowIndex": i + 1,
-                                        "startColumnIndex": 13,  # Столбец N (индекс 13)
+                                        "startColumnIndex": GSHEET_UPDATE_COLUMN,
                                         "endColumnIndex": 14,
                                     },
                                     "rows": [
@@ -76,7 +78,7 @@ async def update_roles(bot):
                                         "sheetId": sheet.id,
                                         "startRowIndex": i,  # Индексация с 0
                                         "endRowIndex": i + 1,
-                                        "startColumnIndex": 13,  # Столбец N (индекс 13)
+                                        "startColumnIndex": GSHEET_UPDATE_COLUMN,
                                         "endColumnIndex": 14,
                                     },
                                     "rows": [
@@ -110,10 +112,10 @@ async def update_roles(bot):
 
 async def update_roles_comment(member: Member):
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_KEYFILE, scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_FILE, scope)
         client = gspread.authorize(creds)
 
-        main_sheet = client.open(SHEET_NAME).worksheet("Таблица состава")
+        main_sheet = client.open(GOOGLE_SHEET_NAME).worksheet(GSHEET_WORKSHEET_NAME)
         main_data = main_sheet.get_all_values()
 
         for i, row in enumerate(main_data):

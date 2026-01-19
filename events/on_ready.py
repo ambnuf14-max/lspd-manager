@@ -3,8 +3,11 @@ import traceback
 
 import discord
 
-from events.update_gsheet import update_roles
+from bot.config import ENABLE_GSHEETS
 from models.roles_request import PersistentView, ButtonView
+
+if ENABLE_GSHEETS:
+    from events.update_gsheet import update_roles
 
 
 async def setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH):
@@ -12,11 +15,22 @@ async def setup_on_ready(bot, ADM_ROLES_CH, CL_REQUEST_CH):
     async def on_ready():
         print("Бот запущен и готов к работе.")
         await initialize_channels(bot, ADM_ROLES_CH, CL_REQUEST_CH)
-        await update_table(bot)
+
+        # Обновление Google Sheets (если включено)
+        if ENABLE_GSHEETS:
+            await update_table(bot)
+
         await process_pending_requests(bot, ADM_ROLES_CH)
         await send_button_message(bot, CL_REQUEST_CH)
-        # await bot.tree.sync(guild=GUILD)
-        # print("Синхронизация команд завершена.")
+
+        # Централизованная синхронизация команд (один раз при старте)
+        print("Синхронизация команд...")
+        from bot.config import GUILD
+        try:
+            synced = await bot.tree.sync(guild=GUILD)
+            print(f"✅ Синхронизировано {len(synced)} команд для сервера {GUILD.id}")
+        except Exception as e:
+            print(f"❌ Ошибка синхронизации команд: {e}")
 
 
 async def initialize_channels(bot, adm_channel_id, client_channel_id):
@@ -83,7 +97,8 @@ async def process_single_request(bot, adm_channel, row):
     try:
         user = await bot.fetch_user(user_id)
         embed = discord.Embed.from_dict(json.loads(embed_data))
-        view = PersistentView(embed, user)
+        view = PersistentView(embed, user, bot)
+        await view.load_presets()  # Загрузить пресеты ПЕРЕД обновлением сообщения
         await update_message(adm_channel, message_id, embed, view)
     except Exception as e:
         print(f"Ошибка при обработке запроса: {e}")
@@ -107,7 +122,7 @@ async def send_button_message(bot, client_channel_id):
     """Отправка сообщения с кнопкой в клиентский канал."""
     client_channel = bot.get_channel(client_channel_id)
     try:
-        view = ButtonView()
+        view = ButtonView(bot)
         await client_channel.send(
             "Нажмите кнопку ниже, чтобы получить роли:", view=view
         )
