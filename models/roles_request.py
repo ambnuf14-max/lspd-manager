@@ -614,7 +614,8 @@ class CategoryContentView(discord.ui.View):
 
     def __init__(self, category: dict, bot, parent_view, guild):
         super().__init__(timeout=300)
-        self.category = category
+        # Преобразуем asyncpg.Record в dict для возможности изменения
+        self.category = dict(category) if hasattr(category, '__getitem__') else category
         self.bot = bot
         self.parent_view = parent_view
         self.guild = guild
@@ -1004,7 +1005,8 @@ class CategoryEditView(discord.ui.View):
 
     def __init__(self, category: dict, bot, parent_view):
         super().__init__(timeout=300)
-        self.category = category
+        # Преобразуем asyncpg.Record в dict для возможности изменения
+        self.category = dict(category) if hasattr(category, '__getitem__') else category
         self.bot = bot
         self.parent_view = parent_view
 
@@ -1052,13 +1054,14 @@ class CategoryRenameModal(discord.ui.Modal, title="Редактировать к
 
     def __init__(self, category: dict, bot, parent_view):
         super().__init__()
-        self.category = category
+        # Преобразуем asyncpg.Record в dict для возможности изменения
+        self.category = dict(category) if hasattr(category, '__getitem__') else category
         self.bot = bot
         self.parent_view = parent_view
 
         self.category_name = discord.ui.TextInput(
             label="Название",
-            default=category['name'],
+            default=self.category['name'],
             required=True,
             max_length=100
         )
@@ -1067,7 +1070,7 @@ class CategoryRenameModal(discord.ui.Modal, title="Редактировать к
         self.emoji = discord.ui.TextInput(
             label="Эмодзи (опционально)",
             placeholder="📁 или ID кастомного: 1234567890",
-            default=category.get('emoji', ''),
+            default=self.category.get('emoji', ''),
             required=False,
             max_length=50
         )
@@ -1118,7 +1121,8 @@ class ConfirmDeleteCategoryView(discord.ui.View):
 
     def __init__(self, category: dict, bot, parent_view):
         super().__init__(timeout=60)
-        self.category = category
+        # Преобразуем asyncpg.Record в dict для возможности изменения
+        self.category = dict(category) if hasattr(category, '__getitem__') else category
         self.bot = bot
         self.parent_view = parent_view
 
