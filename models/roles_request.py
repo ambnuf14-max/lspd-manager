@@ -622,23 +622,33 @@ class SettingsButton(discord.ui.Button):
         self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
-        if not await is_preset_admin(interaction.user):
-            await interaction.response.send_message(
-                "У вас нет прав для управления настройками.",
-                ephemeral=True
+        try:
+            if not await is_preset_admin(interaction.user):
+                await interaction.response.send_message(
+                    "У вас нет прав для управления настройками.",
+                    ephemeral=True
+                )
+                return
+
+            # Открываем главное меню настроек
+            view = SettingsMenuView(self.bot, interaction.guild, self.embed, self.user, interaction.message, self.view)
+
+            embed = discord.Embed(
+                title="⚙ Настройки",
+                description="Выберите раздел настроек",
+                color=discord.Color.blue()
             )
-            return
 
-        # Открываем главное меню настроек
-        view = SettingsMenuView(self.bot, interaction.guild, self.embed, self.user, interaction.message, self.view)
-
-        embed = discord.Embed(
-            title="⚙ Настройки",
-            description="Выберите раздел настроек",
-            color=discord.Color.blue()
-        )
-
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Ошибка в кнопке настроек: {e}", exc_info=True)
+            try:
+                await interaction.response.send_message(
+                    f"Произошла ошибка: {e}",
+                    ephemeral=True
+                )
+            except:
+                pass
 
 
 # ============== ГЛАВНОЕ МЕНЮ НАСТРОЕК ==============
