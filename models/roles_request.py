@@ -754,10 +754,14 @@ class CategoryContentSelect(discord.ui.Select):
                 parsed_emoji = parse_emoji(emoji_str)
                 if parsed_emoji:
                     emoji = parsed_emoji
+
+            # Используем description из базы данных, если есть
+            preset_description = preset.get('description', None)
+
             options.append(discord.SelectOption(
                 label=preset['name'],
                 value=f"preset_{preset['preset_id']}",
-                description=f"🎭 Пресет ({len(preset['role_ids'])} ролей)",
+                description=preset_description if preset_description else None,
                 emoji=emoji
             ))
 
