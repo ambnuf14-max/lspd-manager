@@ -242,14 +242,14 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     )
 
     feedback = discord.ui.TextInput(
-        label="Запрашиваемые роли:",
+        label="Запрашиваемые роли",
         style=discord.TextStyle.long,
         required=True,
         max_length=300,
     )
 
     forum = discord.ui.TextInput(
-        label="Форумный аккаунт (pd.ls-es.su):",
+        label="Форумный аккаунт (pd.ls-es.su)",
         style=discord.TextStyle.short,
         placeholder="Проверьте, указан ли в профиле дискорд.",
         required=True,
@@ -257,7 +257,7 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     )
 
     vk = discord.ui.TextInput(
-        label="Ваш ВКонтакте:",
+        label="ВКонтакте",
         style=discord.TextStyle.short,
         placeholder="https://vk.com/id1",
         required=True,
@@ -309,7 +309,7 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
         created_at = self.user.created_at.strftime("%d.%m.%Y") if self.user.created_at else "Неизвестно"
 
         embed = discord.Embed(
-            title="📋 Запрос ролей",
+            title="Запрос ролей",
             description=f"**От {self.user.mention} (ID: {self.user.id})**\n\n"
             f"**{self.feedback.label}**\n"
             f"{self.feedback.value}\n\n"
@@ -328,7 +328,7 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
         )
 
         embed.add_field(name="📅 На сервере с", value=joined_at, inline=True)
-        embed.add_field(name="Аккаунт создан", value=created_at, inline=True)
+        embed.add_field(name="🗓️ Аккаунт создан", value=created_at, inline=True)
         embed.add_field(name="🎭 Текущие роли", value=roles_text[:1024], inline=False)
 
         view = PersistentView(embed, self.user, self.bot)
