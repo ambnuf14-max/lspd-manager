@@ -204,27 +204,28 @@ async def setup_db(bot):
             """
             DO $$
             DECLARE
-                constraint_name TEXT;
+                fk_constraint_name TEXT;
             BEGIN
                 -- Находим имя constraint для category_id
-                SELECT tc.constraint_name INTO constraint_name
+                SELECT tc.constraint_name INTO fk_constraint_name
                 FROM information_schema.table_constraints tc
                 JOIN information_schema.key_column_usage kcu
                   ON tc.constraint_name = kcu.constraint_name
+                  AND tc.table_schema = kcu.table_schema
                 WHERE tc.table_name = 'role_presets'
                   AND kcu.column_name = 'category_id'
                   AND tc.constraint_type = 'FOREIGN KEY'
                 LIMIT 1;
 
                 -- Если constraint найден, удаляем его и создаем новый с CASCADE
-                IF constraint_name IS NOT NULL THEN
+                IF fk_constraint_name IS NOT NULL THEN
                     -- Проверяем, что это старый constraint с SET NULL
                     IF EXISTS (
                         SELECT 1 FROM information_schema.referential_constraints rc
-                        WHERE rc.constraint_name = constraint_name
+                        WHERE rc.constraint_name = fk_constraint_name
                         AND rc.delete_rule = 'SET NULL'
                     ) THEN
-                        EXECUTE 'ALTER TABLE role_presets DROP CONSTRAINT ' || constraint_name;
+                        EXECUTE 'ALTER TABLE role_presets DROP CONSTRAINT ' || fk_constraint_name;
                         ALTER TABLE role_presets
                         ADD CONSTRAINT role_presets_category_id_fkey
                         FOREIGN KEY (category_id)
