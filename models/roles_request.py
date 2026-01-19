@@ -131,52 +131,91 @@ class PersistentView(discord.ui.View):
         self.add_item(SettingsButton(embed, user, bot))
 
     async def load_presets(self):
-        """Загрузка пресетов из БД и добавление Select Menu."""
+        """Загрузка категорий и пресетов для каскадного выбора."""
         if self._presets_loaded:
             return
 
         try:
-            async with self.bot.db_pool.acquire() as conn:
-                presets = await conn.fetch(
-                    "SELECT preset_id, name, role_ids, description, emoji FROM role_presets ORDER BY name"
-                )
-
-            if presets:
-                self.add_item(PresetSelect(presets[:24], self.embed, self.user, self.bot, self.guild))
-                logger.info(f"Загружено {len(presets[:24])} пресетов для запроса от {self.user.display_name}")
-
+            select = PresetCategorySelect(self.embed, self.user, self.bot, self.guild)
+            await select.load_options()
+            self.add_item(select)
+            logger.info(f"Каскадный выбор пресетов загружен для запроса от {self.user.display_name}")
             self._presets_loaded = True
         except Exception as e:
             logger.error(f"Ошибка при загрузке пресетов: {e}", exc_info=True)
 
 
-# ============== ВЫБОР ПРЕСЕТА ==============
+# ============== КАСКАДНЫЙ ВЫБОР ПРЕСЕТА ==============
 
-class PresetSelect(discord.ui.Select):
-    """Выпадающий список для выбора пресета"""
+class PresetCategorySelect(discord.ui.Select):
+    """Первый уровень - выбор категории или пресета без категории"""
 
-    def __init__(self, presets: list, embed: discord.Embed, user: discord.User, bot, guild: discord.Guild = None):
-        self.presets_data = {str(p['preset_id']): p for p in presets}
+    def __init__(self, embed: discord.Embed, user: discord.User, bot, guild: discord.Guild, parent_category_id=None):
         self.embed = embed
         self.user = user
         self.bot = bot
         self.guild = guild
+        self.parent_category_id = parent_category_id
+
+        super().__init__(
+            placeholder="Загрузка...",
+            options=[discord.SelectOption(label="Загрузка...", value="loading")],
+            custom_id=f"preset_cat_select_{parent_category_id or 'root'}",
+            row=1
+        )
+
+    async def load_options(self):
+        """Асинхронная загрузка опций"""
+        async with self.bot.db_pool.acquire() as conn:
+            if self.parent_category_id is None:
+                # Корневой уровень: категории + пресеты без категории
+                categories = await conn.fetch(
+                    "SELECT category_id, name FROM preset_categories WHERE parent_id IS NULL ORDER BY name"
+                )
+                uncategorized = await conn.fetch(
+                    "SELECT preset_id, name, description, emoji FROM role_presets WHERE category_id IS NULL ORDER BY name"
+                )
+            else:
+                # Уровень подкатегорий: подкатегории + пресеты этой категории
+                categories = await conn.fetch(
+                    "SELECT category_id, name FROM preset_categories WHERE parent_id = $1 ORDER BY name",
+                    self.parent_category_id
+                )
+                uncategorized = await conn.fetch(
+                    "SELECT preset_id, name, description, emoji FROM role_presets WHERE category_id = $1 ORDER BY name",
+                    self.parent_category_id
+                )
 
         options = []
-        for preset in presets[:25]:
-            # Описание: используем description из БД или "Нет описания"
+
+        # Кнопка "Назад" если не корневой уровень
+        if self.parent_category_id is not None:
+            options.append(discord.SelectOption(
+                label="◀ Назад",
+                value="back",
+                emoji="↩"
+            ))
+
+        # Добавляем категории
+        for cat in categories[:12]:
+            options.append(discord.SelectOption(
+                label=cat['name'][:100],
+                value=f"cat_{cat['category_id']}",
+                emoji="📁"
+            ))
+
+        # Добавляем пресеты
+        for preset in uncategorized[:12]:
             description = preset.get('description') or "Нет описания"
             if len(description) > 100:
                 description = description[:97] + "..."
-
-            # Эмодзи из БД (поддержка кастомных)
-            emoji = parse_emoji(preset.get('emoji'), guild)
+            emoji = parse_emoji(preset.get('emoji'), self.guild)
 
             options.append(discord.SelectOption(
                 label=preset['name'][:100],
-                value=str(preset['preset_id']),
+                value=f"preset_{preset['preset_id']}",
                 description=description,
-                emoji=emoji
+                emoji=emoji or "🎭"
             ))
 
         if not options:
@@ -186,15 +225,10 @@ class PresetSelect(discord.ui.Select):
                 description="Создайте пресет через кнопку Настройки"
             ))
 
-        super().__init__(
-            placeholder="Выберите пресет ролей для выдачи...",
-            options=options,
-            custom_id="preset_select",
-            row=1
-        )
+        self.options = options
+        self.placeholder = "Выберите категорию или пресет..."
 
     async def callback(self, interaction: discord.Interaction):
-        """Обработка выбора пресета"""
         selected_value = self.values[0]
 
         if selected_value == "none":
@@ -204,46 +238,90 @@ class PresetSelect(discord.ui.Select):
             )
             return
 
-        preset = self.presets_data.get(selected_value)
-
-        if not preset:
-            await interaction.response.send_message("Пресет не найден.", ephemeral=True)
+        if selected_value == "loading":
+            await interaction.response.defer()
             return
 
-        guild = interaction.guild
-        member = guild.get_member(self.user.id)
+        if selected_value == "back":
+            # Возврат на уровень выше
+            async with self.bot.db_pool.acquire() as conn:
+                if self.parent_category_id:
+                    parent = await conn.fetchrow(
+                        "SELECT parent_id FROM preset_categories WHERE category_id = $1",
+                        self.parent_category_id
+                    )
+                    new_parent_id = parent['parent_id'] if parent else None
+                else:
+                    new_parent_id = None
 
-        if not member:
+            new_select = PresetCategorySelect(self.embed, self.user, self.bot, self.guild, new_parent_id)
+            await new_select.load_options()
+
+            # Заменяем select в view
+            self.view.remove_item(self)
+            self.view.add_item(new_select)
+            await interaction.response.edit_message(view=self.view)
+            return
+
+        if selected_value.startswith("cat_"):
+            # Выбрана категория - переходим на уровень ниже
+            category_id = int(selected_value.replace("cat_", ""))
+            new_select = PresetCategorySelect(self.embed, self.user, self.bot, self.guild, category_id)
+            await new_select.load_options()
+
+            # Заменяем select в view
+            self.view.remove_item(self)
+            self.view.add_item(new_select)
+            await interaction.response.edit_message(view=self.view)
+            return
+
+        if selected_value.startswith("preset_"):
+            # Выбран пресет - показываем подтверждение
+            preset_id = int(selected_value.replace("preset_", ""))
+
+            async with self.bot.db_pool.acquire() as conn:
+                preset = await conn.fetchrow(
+                    "SELECT preset_id, name, role_ids, description, emoji FROM role_presets WHERE preset_id = $1",
+                    preset_id
+                )
+
+            if not preset:
+                await interaction.response.send_message("Пресет не найден.", ephemeral=True)
+                return
+
+            guild = interaction.guild
+            member = guild.get_member(self.user.id)
+
+            if not member:
+                await interaction.response.send_message(
+                    "Пользователь больше не на сервере.",
+                    ephemeral=True
+                )
+                return
+
+            # Получаем названия ролей
+            role_names = []
+            for role_id in preset['role_ids']:
+                role = guild.get_role(role_id)
+                if role:
+                    role_names.append(role.name)
+                else:
+                    role_names.append(f"ID {role_id}")
+
+            confirm_view = ConfirmPresetView(
+                preset=dict(preset),
+                embed=self.embed,
+                user=self.user,
+                original_message=interaction.message,
+                original_view=self.view
+            )
+
+            emoji_str = f"{preset['emoji']} " if preset.get('emoji') else ""
             await interaction.response.send_message(
-                "Пользователь больше не на сервере.",
+                f"**Выдать пресет {emoji_str}«{preset['name']}»?**\n\nРоли: {', '.join(role_names)}",
+                view=confirm_view,
                 ephemeral=True
             )
-            return
-
-        # Получаем названия ролей для подтверждения
-        role_names = []
-        for role_id in preset['role_ids']:
-            role = guild.get_role(role_id)
-            if role:
-                role_names.append(role.name)
-            else:
-                role_names.append(f"ID {role_id}")
-
-        # Показываем подтверждение
-        confirm_view = ConfirmPresetView(
-            preset=preset,
-            embed=self.embed,
-            user=self.user,
-            original_message=interaction.message,
-            original_view=self.view
-        )
-
-        emoji_str = f"{preset.get('emoji')} " if preset.get('emoji') else ""
-        await interaction.response.send_message(
-            f"**Выдать пресет {emoji_str}«{preset['name']}»?**\n\nРоли: {', '.join(role_names)}",
-            view=confirm_view,
-            ephemeral=True
-        )
 
 
 # ============== ПОДТВЕРЖДЕНИЕ ПРЕСЕТА ==============
@@ -405,7 +483,22 @@ class SettingsMenuView(discord.ui.View):
 
         await interaction.response.edit_message(embed=embed, view=view)
 
-    @discord.ui.button(label="Настройка причин отказа", style=discord.ButtonStyle.primary, emoji="📋", row=0)
+    @discord.ui.button(label="Управление категориями", style=discord.ButtonStyle.primary, emoji="📁", row=0)
+    async def categories_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = CategoryManagementView(self.bot, self)
+        await view.refresh_categories()
+
+        embed = discord.Embed(
+            title="📁 Управление категориями",
+            description="Категории позволяют группировать пресеты.\n"
+                        "Структура: **Категория → Подкатегория → Пресет**\n\n"
+                        "Выберите категорию для редактирования или создайте новую",
+            color=discord.Color.blue()
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    @discord.ui.button(label="Настройка причин отказа", style=discord.ButtonStyle.primary, emoji="📋", row=1)
     async def reject_reasons_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = RejectReasonsManagementView(self.bot, self)
         await view.refresh_reasons()
@@ -418,6 +511,386 @@ class SettingsMenuView(discord.ui.View):
         )
 
         await interaction.response.edit_message(embed=embed, view=view)
+
+
+# ============== УПРАВЛЕНИЕ КАТЕГОРИЯМИ ==============
+
+class CategoryManagementView(discord.ui.View):
+    """View для управления категориями пресетов"""
+
+    def __init__(self, bot, settings_menu_view):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.settings_menu_view = settings_menu_view
+        self.categories = []
+
+    async def refresh_categories(self):
+        """Загрузка категорий из БД"""
+        async with self.bot.db_pool.acquire() as conn:
+            self.categories = await conn.fetch(
+                """
+                SELECT c.category_id, c.name, c.parent_id,
+                       p.name as parent_name,
+                       (SELECT COUNT(*) FROM role_presets WHERE category_id = c.category_id) as preset_count
+                FROM preset_categories c
+                LEFT JOIN preset_categories p ON c.parent_id = p.category_id
+                ORDER BY p.name NULLS FIRST, c.name
+                """
+            )
+
+        self.clear_items()
+        self.add_item(CategoryManagementSelect(self.categories, self.bot, self))
+        self.add_item(BackToSettingsMenuButton(self.settings_menu_view))
+
+
+class CategoryManagementSelect(discord.ui.Select):
+    """Select для управления категориями"""
+
+    def __init__(self, categories: list, bot, parent_view):
+        self.categories_data = {str(c['category_id']): c for c in categories}
+        self.bot = bot
+        self.parent_view = parent_view
+
+        options = [
+            discord.SelectOption(
+                label="Создать категорию",
+                value="create_category",
+                emoji="➕",
+                description="Создать новую корневую категорию"
+            )
+        ]
+
+        for cat in categories[:24]:
+            # Формируем название с учётом родителя
+            if cat['parent_name']:
+                label = f"{cat['parent_name']} → {cat['name']}"
+                emoji = "📂"
+            else:
+                label = cat['name']
+                emoji = "📁"
+
+            if len(label) > 100:
+                label = label[:97] + "..."
+
+            description = f"Пресетов: {cat['preset_count']}"
+
+            options.append(discord.SelectOption(
+                label=label,
+                value=str(cat['category_id']),
+                description=description,
+                emoji=emoji
+            ))
+
+        super().__init__(
+            placeholder="Выберите действие или категорию...",
+            options=options,
+            row=0
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        selected_value = self.values[0]
+
+        if selected_value == "create_category":
+            # Показываем выбор: корневая или подкатегория
+            view = CreateCategoryTypeView(self.bot, self.parent_view)
+            await interaction.response.edit_message(
+                content="**Какую категорию создать?**",
+                embed=None,
+                view=view
+            )
+            return
+
+        category = self.categories_data.get(selected_value)
+        if not category:
+            await interaction.response.send_message("Категория не найдена.", ephemeral=True)
+            return
+
+        # Показываем меню редактирования категории
+        view = CategoryEditView(category, self.bot, self.parent_view)
+
+        embed = discord.Embed(
+            title=f"📁 Редактирование категории",
+            description=f"**Название:** {category['name']}\n"
+                        f"**Родитель:** {category['parent_name'] or 'Нет (корневая)'}\n"
+                        f"**Пресетов:** {category['preset_count']}",
+            color=discord.Color.blue()
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class CreateCategoryTypeView(discord.ui.View):
+    """View для выбора типа создаваемой категории"""
+
+    def __init__(self, bot, parent_view):
+        super().__init__(timeout=60)
+        self.bot = bot
+        self.parent_view = parent_view
+
+    @discord.ui.button(label="Корневая категория", style=discord.ButtonStyle.primary, emoji="📁", row=0)
+    async def root_category(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = CategoryCreateModal(self.bot, self.parent_view, parent_id=None)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Подкатегория", style=discord.ButtonStyle.primary, emoji="📂", row=0)
+    async def sub_category(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Показываем выбор родительской категории
+        view = SelectParentCategoryView(self.bot, self.parent_view)
+        await view.load_root_categories()
+
+        await interaction.response.edit_message(
+            content="**Выберите родительскую категорию:**",
+            embed=None,
+            view=view
+        )
+
+    @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, emoji="✖", row=1)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.parent_view.refresh_categories()
+        embed = discord.Embed(
+            title="📁 Управление категориями",
+            description="Категории позволяют группировать пресеты.\n"
+                        "Структура: **Категория → Подкатегория → Пресет**",
+            color=discord.Color.blue()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+
+class SelectParentCategoryView(discord.ui.View):
+    """View для выбора родительской категории"""
+
+    def __init__(self, bot, parent_view):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.parent_view = parent_view
+
+    async def load_root_categories(self):
+        """Загрузка корневых категорий"""
+        async with self.bot.db_pool.acquire() as conn:
+            categories = await conn.fetch(
+                "SELECT category_id, name FROM preset_categories WHERE parent_id IS NULL ORDER BY name"
+            )
+
+        if not categories:
+            self.add_item(discord.ui.Button(label="Нет корневых категорий", disabled=True, row=0))
+        else:
+            options = []
+            for cat in categories[:25]:
+                options.append(discord.SelectOption(
+                    label=cat['name'],
+                    value=str(cat['category_id']),
+                    emoji="📁"
+                ))
+
+            select = ParentCategorySelect(options, self.bot, self.parent_view)
+            self.add_item(select)
+
+        self.add_item(BackToCategoriesButton(self.parent_view))
+
+
+class ParentCategorySelect(discord.ui.Select):
+    """Select для выбора родительской категории"""
+
+    def __init__(self, options, bot, parent_view):
+        super().__init__(
+            placeholder="Выберите родительскую категорию...",
+            options=options,
+            row=0
+        )
+        self.bot = bot
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        parent_id = int(self.values[0])
+        modal = CategoryCreateModal(self.bot, self.parent_view, parent_id=parent_id)
+        await interaction.response.send_modal(modal)
+
+
+class CategoryCreateModal(discord.ui.Modal, title="Создать категорию"):
+    """Модальное окно для создания категории"""
+
+    category_name = discord.ui.TextInput(
+        label="Название категории",
+        placeholder="Например: Rampart Area",
+        required=True,
+        max_length=100
+    )
+
+    def __init__(self, bot, parent_view, parent_id=None):
+        super().__init__()
+        self.bot = bot
+        self.parent_view = parent_view
+        self.parent_id = parent_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO preset_categories (name, parent_id, created_by, created_at) VALUES ($1, $2, $3, NOW())",
+                    self.category_name.value,
+                    self.parent_id,
+                    interaction.user.id
+                )
+
+            logger.info(f"Категория '{self.category_name.value}' создана пользователем {interaction.user.display_name}")
+
+            await self.parent_view.refresh_categories()
+            embed = discord.Embed(
+                title="📁 Управление категориями",
+                description=f"Категория **«{self.category_name.value}»** создана!",
+                color=discord.Color.green()
+            )
+            await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+        except Exception as e:
+            logger.error(f"Ошибка при создании категории: {e}", exc_info=True)
+            await interaction.response.send_message(f"Ошибка: {e}", ephemeral=True)
+
+
+class CategoryEditView(discord.ui.View):
+    """View для редактирования категории"""
+
+    def __init__(self, category: dict, bot, parent_view):
+        super().__init__(timeout=300)
+        self.category = category
+        self.bot = bot
+        self.parent_view = parent_view
+
+    @discord.ui.button(label="Переименовать", style=discord.ButtonStyle.primary, emoji="✏", row=0)
+    async def rename(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = CategoryRenameModal(self.category, self.bot, self.parent_view)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Создать подкатегорию", style=discord.ButtonStyle.primary, emoji="📂", row=0)
+    async def create_sub(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Только для корневых категорий
+        if self.category['parent_id'] is not None:
+            await interaction.response.send_message(
+                "Подкатегории можно создавать только для корневых категорий (максимум 2 уровня).",
+                ephemeral=True
+            )
+            return
+        modal = CategoryCreateModal(self.bot, self.parent_view, parent_id=self.category['category_id'])
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Удалить", style=discord.ButtonStyle.danger, emoji="🗑", row=1)
+    async def delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = ConfirmDeleteCategoryView(self.category, self.bot, self.parent_view)
+        await interaction.response.edit_message(
+            content=f"**Удалить категорию «{self.category['name']}»?**\n\n"
+                    f"⚠️ Все подкатегории также будут удалены!\n"
+                    f"Пресеты останутся, но будут без категории.",
+            embed=None,
+            view=view
+        )
+
+    @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, emoji="◀", row=1)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.parent_view.refresh_categories()
+        embed = discord.Embed(
+            title="📁 Управление категориями",
+            description="Категории позволяют группировать пресеты.",
+            color=discord.Color.blue()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+
+class CategoryRenameModal(discord.ui.Modal, title="Переименовать категорию"):
+    """Модальное окно для переименования категории"""
+
+    def __init__(self, category: dict, bot, parent_view):
+        super().__init__()
+        self.category = category
+        self.bot = bot
+        self.parent_view = parent_view
+
+        self.category_name = discord.ui.TextInput(
+            label="Новое название",
+            default=category['name'],
+            required=True,
+            max_length=100
+        )
+        self.add_item(self.category_name)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE preset_categories SET name = $1 WHERE category_id = $2",
+                    self.category_name.value,
+                    self.category['category_id']
+                )
+
+            await self.parent_view.refresh_categories()
+            embed = discord.Embed(
+                title="📁 Управление категориями",
+                description=f"Категория переименована в **«{self.category_name.value}»**!",
+                color=discord.Color.green()
+            )
+            await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+        except Exception as e:
+            await interaction.response.send_message(f"Ошибка: {e}", ephemeral=True)
+
+
+class ConfirmDeleteCategoryView(discord.ui.View):
+    """View для подтверждения удаления категории"""
+
+    def __init__(self, category: dict, bot, parent_view):
+        super().__init__(timeout=60)
+        self.category = category
+        self.bot = bot
+        self.parent_view = parent_view
+
+    @discord.ui.button(label="Да, удалить", style=discord.ButtonStyle.danger, emoji="🗑")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM preset_categories WHERE category_id = $1",
+                self.category['category_id']
+            )
+
+        logger.info(f"Категория '{self.category['name']}' удалена пользователем {interaction.user.display_name}")
+
+        await self.parent_view.refresh_categories()
+        embed = discord.Embed(
+            title="📁 Управление категориями",
+            description=f"Категория **«{self.category['name']}»** удалена!",
+            color=discord.Color.red()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+    @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, emoji="✖")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.parent_view.refresh_categories()
+        embed = discord.Embed(
+            title="📁 Управление категориями",
+            description="Удаление отменено",
+            color=discord.Color.blue()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+
+
+class BackToCategoriesButton(discord.ui.Button):
+    """Кнопка возврата к управлению категориями"""
+
+    def __init__(self, parent_view):
+        super().__init__(
+            label="Назад",
+            style=discord.ButtonStyle.gray,
+            emoji="◀",
+            row=2
+        )
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.parent_view.refresh_categories()
+        embed = discord.Embed(
+            title="📁 Управление категориями",
+            description="Категории позволяют группировать пресеты.",
+            color=discord.Color.blue()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
 
 
 # ============== УПРАВЛЕНИЕ ПРЕСЕТАМИ ==============
@@ -440,7 +913,13 @@ class PresetManagementView(discord.ui.View):
         """Загрузка пресетов из БД"""
         async with self.bot.db_pool.acquire() as conn:
             self.presets = await conn.fetch(
-                "SELECT preset_id, name, role_ids, description, emoji FROM role_presets ORDER BY name"
+                """
+                SELECT p.preset_id, p.name, p.role_ids, p.description, p.emoji, p.category_id,
+                       c.name as category_name
+                FROM role_presets p
+                LEFT JOIN preset_categories c ON p.category_id = c.category_id
+                ORDER BY p.name
+                """
             )
 
         # Очищаем и добавляем компоненты
@@ -748,6 +1227,141 @@ class ConfirmDeleteReasonView(discord.ui.View):
         await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
 
 
+# ============== ВЫБОР КАТЕГОРИИ ПРИ СОЗДАНИИ ПРЕСЕТА ==============
+
+class SelectPresetCategoryForCreateView(discord.ui.View):
+    """View для выбора категории при создании пресета"""
+
+    def __init__(self, bot, guild, parent_view):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.guild = guild
+        self.parent_view = parent_view
+
+    async def load_categories(self):
+        """Загрузка категорий из БД"""
+        async with self.bot.db_pool.acquire() as conn:
+            categories = await conn.fetch(
+                """
+                SELECT c.category_id, c.name, c.parent_id, p.name as parent_name
+                FROM preset_categories c
+                LEFT JOIN preset_categories p ON c.parent_id = p.category_id
+                ORDER BY p.name NULLS FIRST, c.name
+                """
+            )
+
+        self.add_item(PresetCategoryForCreateSelect(categories, self.bot, self.guild, self.parent_view))
+
+        # Кнопка "Без категории"
+        self.add_item(NoCategoryButton(self.bot, self.guild, self.parent_view))
+
+        # Кнопка "Назад"
+        self.add_item(BackToPresetsButton(self.parent_view))
+
+
+class PresetCategoryForCreateSelect(discord.ui.Select):
+    """Select для выбора категории при создании пресета"""
+
+    def __init__(self, categories: list, bot, guild, parent_view):
+        self.bot = bot
+        self.guild = guild
+        self.parent_view = parent_view
+        self.categories_data = {str(c['category_id']): c for c in categories}
+
+        options = []
+
+        if not categories:
+            options.append(discord.SelectOption(
+                label="Нет категорий",
+                value="none",
+                description="Создайте категорию в разделе 'Управление категориями'"
+            ))
+        else:
+            for cat in categories[:25]:
+                # Формируем название с учётом родителя
+                if cat['parent_name']:
+                    label = f"{cat['parent_name']} → {cat['name']}"
+                    emoji = "📂"
+                else:
+                    label = cat['name']
+                    emoji = "📁"
+
+                if len(label) > 100:
+                    label = label[:97] + "..."
+
+                options.append(discord.SelectOption(
+                    label=label,
+                    value=str(cat['category_id']),
+                    emoji=emoji
+                ))
+
+        super().__init__(
+            placeholder="Выберите категорию...",
+            options=options,
+            row=0
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        selected_value = self.values[0]
+
+        if selected_value == "none":
+            await interaction.response.send_message(
+                "Категории не созданы. Создайте их в разделе 'Управление категориями'.",
+                ephemeral=True
+            )
+            return
+
+        category = self.categories_data.get(selected_value)
+        if not category:
+            await interaction.response.send_message("Категория не найдена.", ephemeral=True)
+            return
+
+        # Открываем модальное окно с выбранной категорией
+        modal = PresetCreateModal(self.bot, self.guild, self.parent_view, category_id=int(selected_value))
+        await interaction.response.send_modal(modal)
+
+
+class NoCategoryButton(discord.ui.Button):
+    """Кнопка 'Без категории' при создании пресета"""
+
+    def __init__(self, bot, guild, parent_view):
+        super().__init__(
+            label="Без категории",
+            style=discord.ButtonStyle.secondary,
+            emoji="📄",
+            row=1
+        )
+        self.bot = bot
+        self.guild = guild
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        modal = PresetCreateModal(self.bot, self.guild, self.parent_view, category_id=None)
+        await interaction.response.send_modal(modal)
+
+
+class BackToPresetsButton(discord.ui.Button):
+    """Кнопка возврата к управлению пресетами"""
+
+    def __init__(self, parent_view):
+        super().__init__(
+            label="Назад",
+            style=discord.ButtonStyle.gray,
+            emoji="◀",
+            row=1
+        )
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.parent_view.refresh_presets()
+        embed = discord.Embed(
+            title="🎭 Управление пресетами",
+            description="Выберите действие или пресет для редактирования",
+            color=discord.Color.blue()
+        )
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+
+
 class PresetManagementSelect(discord.ui.Select):
     """Select для управления пресетами (создание/редактирование)"""
 
@@ -790,10 +1404,17 @@ class PresetManagementSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         selected_value = self.values[0]
 
-        # Создание нового пресета
+        # Создание нового пресета - сначала выбор категории
         if selected_value == "create_preset":
-            modal = PresetCreateModal(self.bot, self.guild, self.parent_view)
-            await interaction.response.send_modal(modal)
+            view = SelectPresetCategoryForCreateView(self.bot, self.guild, self.parent_view)
+            await view.load_categories()
+
+            embed = discord.Embed(
+                title="📁 Выберите категорию для пресета",
+                description="Выберите категорию, в которую будет добавлен пресет, или создайте пресет без категории.",
+                color=discord.Color.blue()
+            )
+            await interaction.response.edit_message(embed=embed, view=view)
             return
 
         preset = self.presets_data.get(selected_value)
@@ -822,6 +1443,7 @@ class PresetManagementSelect(discord.ui.Select):
         embed.add_field(name="Роли", value="\n".join(role_names) if role_names else "Нет ролей", inline=False)
         if preset.get('description'):
             embed.add_field(name="Описание", value=preset['description'], inline=False)
+        embed.add_field(name="Категория", value=preset.get('category_name') or "Без категории", inline=True)
         embed.add_field(name="ID", value=str(preset['preset_id']), inline=True)
 
         await interaction.response.edit_message(embed=embed, view=view)
@@ -853,7 +1475,20 @@ class PresetEditView(discord.ui.View):
             view=view
         )
 
-    @discord.ui.button(label="Удалить пресет", style=discord.ButtonStyle.danger, emoji="🗑", row=1)
+    @discord.ui.button(label="Изменить категорию", style=discord.ButtonStyle.primary, emoji="📁", row=1)
+    async def change_category(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = ChangePresetCategoryView(self.preset, self.bot, self.guild, self.parent_view)
+        await view.load_categories()
+
+        current_cat = self.preset.get('category_name') or "Без категории"
+        embed = discord.Embed(
+            title=f"📁 Изменить категорию пресета «{self.preset['name']}»",
+            description=f"**Текущая категория:** {current_cat}\n\nВыберите новую категорию или уберите из категории.",
+            color=discord.Color.blue()
+        )
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    @discord.ui.button(label="Удалить пресет", style=discord.ButtonStyle.danger, emoji="🗑", row=2)
     async def delete_preset(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = ConfirmDeleteView(self.preset, self.bot, self.parent_view)
         await interaction.response.edit_message(
@@ -862,7 +1497,7 @@ class PresetEditView(discord.ui.View):
             view=view
         )
 
-    @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, emoji="◀", row=1)
+    @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, emoji="◀", row=2)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.parent_view.refresh_presets()
         embed = discord.Embed(
@@ -871,6 +1506,213 @@ class PresetEditView(discord.ui.View):
             color=discord.Color.blue()
         )
         await interaction.response.edit_message(embed=embed, view=self.parent_view)
+
+
+# ============== ИЗМЕНЕНИЕ КАТЕГОРИИ ПРЕСЕТА ==============
+
+class ChangePresetCategoryView(discord.ui.View):
+    """View для изменения категории пресета"""
+
+    def __init__(self, preset: dict, bot, guild, parent_view):
+        super().__init__(timeout=120)
+        self.preset = preset
+        self.bot = bot
+        self.guild = guild
+        self.parent_view = parent_view
+
+    async def load_categories(self):
+        """Загрузка категорий из БД"""
+        async with self.bot.db_pool.acquire() as conn:
+            categories = await conn.fetch(
+                """
+                SELECT c.category_id, c.name, c.parent_id, p.name as parent_name
+                FROM preset_categories c
+                LEFT JOIN preset_categories p ON c.parent_id = p.category_id
+                ORDER BY p.name NULLS FIRST, c.name
+                """
+            )
+
+        self.add_item(ChangePresetCategorySelect(categories, self.preset, self.bot, self.parent_view))
+
+        # Кнопка "Убрать из категории"
+        self.add_item(RemoveFromCategoryButton(self.preset, self.bot, self.parent_view))
+
+        # Кнопка "Назад"
+        self.add_item(BackToPresetEditButton(self.preset, self.bot, self.guild, self.parent_view))
+
+
+class ChangePresetCategorySelect(discord.ui.Select):
+    """Select для изменения категории пресета"""
+
+    def __init__(self, categories: list, preset: dict, bot, parent_view):
+        self.preset = preset
+        self.bot = bot
+        self.parent_view = parent_view
+
+        options = []
+
+        if not categories:
+            options.append(discord.SelectOption(
+                label="Нет категорий",
+                value="none",
+                description="Создайте категорию в разделе 'Управление категориями'"
+            ))
+        else:
+            for cat in categories[:25]:
+                # Формируем название с учётом родителя
+                if cat['parent_name']:
+                    label = f"{cat['parent_name']} → {cat['name']}"
+                    emoji = "📂"
+                else:
+                    label = cat['name']
+                    emoji = "📁"
+
+                if len(label) > 100:
+                    label = label[:97] + "..."
+
+                # Отмечаем текущую категорию
+                is_current = preset.get('category_id') == cat['category_id']
+
+                options.append(discord.SelectOption(
+                    label=label,
+                    value=str(cat['category_id']),
+                    emoji=emoji,
+                    default=is_current
+                ))
+
+        super().__init__(
+            placeholder="Выберите новую категорию...",
+            options=options,
+            row=0
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        selected_value = self.values[0]
+
+        if selected_value == "none":
+            await interaction.response.send_message(
+                "Категории не созданы. Создайте их в разделе 'Управление категориями'.",
+                ephemeral=True
+            )
+            return
+
+        category_id = int(selected_value)
+
+        # Обновляем категорию пресета в БД
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE role_presets SET category_id = $1 WHERE preset_id = $2",
+                category_id,
+                self.preset['preset_id']
+            )
+
+            # Получаем название категории
+            cat_name = await conn.fetchval(
+                "SELECT name FROM preset_categories WHERE category_id = $1",
+                category_id
+            )
+
+        logger.info(f"Категория пресета '{self.preset['name']}' изменена на '{cat_name}' пользователем {interaction.user.display_name}")
+
+        await self.parent_view.refresh_presets()
+        embed = discord.Embed(
+            title="🎭 Управление пресетами",
+            description=f"Категория пресета **{self.preset['name']}** изменена на **{cat_name}**!",
+            color=discord.Color.green()
+        )
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+
+
+class RemoveFromCategoryButton(discord.ui.Button):
+    """Кнопка для удаления пресета из категории"""
+
+    def __init__(self, preset: dict, bot, parent_view):
+        super().__init__(
+            label="Убрать из категории",
+            style=discord.ButtonStyle.secondary,
+            emoji="📄",
+            row=1
+        )
+        self.preset = preset
+        self.bot = bot
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        # Убираем категорию
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE role_presets SET category_id = NULL WHERE preset_id = $1",
+                self.preset['preset_id']
+            )
+
+        logger.info(f"Пресет '{self.preset['name']}' убран из категории пользователем {interaction.user.display_name}")
+
+        await self.parent_view.refresh_presets()
+        embed = discord.Embed(
+            title="🎭 Управление пресетами",
+            description=f"Пресет **{self.preset['name']}** убран из категории!",
+            color=discord.Color.green()
+        )
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+
+
+class BackToPresetEditButton(discord.ui.Button):
+    """Кнопка возврата к редактированию пресета"""
+
+    def __init__(self, preset: dict, bot, guild, parent_view):
+        super().__init__(
+            label="Назад",
+            style=discord.ButtonStyle.gray,
+            emoji="◀",
+            row=1
+        )
+        self.preset = preset
+        self.bot = bot
+        self.guild = guild
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        # Перезагружаем данные пресета для актуальности
+        async with self.bot.db_pool.acquire() as conn:
+            updated_preset = await conn.fetchrow(
+                """
+                SELECT p.preset_id, p.name, p.role_ids, p.description, p.emoji, p.category_id,
+                       c.name as category_name
+                FROM role_presets p
+                LEFT JOIN preset_categories c ON p.category_id = c.category_id
+                WHERE p.preset_id = $1
+                """,
+                self.preset['preset_id']
+            )
+
+        if not updated_preset:
+            await interaction.response.send_message("Пресет не найден.", ephemeral=True)
+            return
+
+        preset_dict = dict(updated_preset)
+        view = PresetEditView(preset_dict, self.bot, self.guild, self.parent_view)
+
+        # Получаем названия ролей
+        role_names = []
+        for role_id in preset_dict['role_ids']:
+            role = self.guild.get_role(role_id)
+            if role:
+                role_names.append(role.name)
+            else:
+                role_names.append(f"ID {role_id} (удалена)")
+
+        emoji_str = f"{preset_dict.get('emoji')} " if preset_dict.get('emoji') else ""
+        embed = discord.Embed(
+            title=f"{emoji_str}{preset_dict['name']}",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Роли", value="\n".join(role_names) if role_names else "Нет ролей", inline=False)
+        if preset_dict.get('description'):
+            embed.add_field(name="Описание", value=preset_dict['description'], inline=False)
+        embed.add_field(name="Категория", value=preset_dict.get('category_name') or "Без категории", inline=True)
+        embed.add_field(name="ID", value=str(preset_dict['preset_id']), inline=True)
+
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 # ============== ВЫБОР РОЛЕЙ ==============
@@ -1094,11 +1936,12 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
         max_length=500
     )
 
-    def __init__(self, bot, guild, parent_view=None):
+    def __init__(self, bot, guild, parent_view=None, category_id=None):
         super().__init__()
         self.bot = bot
         self.guild = guild
         self.parent_view = parent_view
+        self.category_id = category_id
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -1137,22 +1980,23 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
             # Валидация эмодзи
             emoji_value = self.emoji.value.strip() if self.emoji.value else None
 
-            # Сохранение в БД
+            # Сохранение в БД с категорией
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
-                    "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, emoji) "
-                    "VALUES ($1, $2, $3, $4, $5, $6)",
+                    "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, emoji, category_id) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7)",
                     self.preset_name.value,
                     role_ids,
                     interaction.user.id,
                     datetime.now(),
                     self.description.value if self.description.value else None,
-                    emoji_value
+                    emoji_value,
+                    self.category_id
                 )
 
             logger.info(
                 f"Пресет '{self.preset_name.value}' создан пользователем {interaction.user.display_name} "
-                f"с {len(valid_roles)} ролями"
+                f"с {len(valid_roles)} ролями, категория: {self.category_id}"
             )
 
             role_list = ", ".join([r.name for r in valid_roles])

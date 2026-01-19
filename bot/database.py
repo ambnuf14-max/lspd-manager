@@ -48,6 +48,18 @@ async def setup_db(bot):
             )
         """
         )
+        # Таблица категорий пресетов (с поддержкой вложенности)
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS preset_categories (
+                category_id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                parent_id INT REFERENCES preset_categories(category_id) ON DELETE CASCADE,
+                created_by BIGINT NOT NULL,
+                created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
+            )
+        """
+        )
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS role_presets (
@@ -57,7 +69,8 @@ async def setup_db(bot):
                 created_by BIGINT NOT NULL,
                 created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 description TEXT,
-                emoji TEXT
+                emoji TEXT,
+                category_id INT REFERENCES preset_categories(category_id) ON DELETE SET NULL
             )
         """
         )
@@ -71,6 +84,20 @@ async def setup_db(bot):
                     WHERE table_name = 'role_presets' AND column_name = 'emoji'
                 ) THEN
                     ALTER TABLE role_presets ADD COLUMN emoji TEXT;
+                END IF;
+            END $$;
+            """
+        )
+        # Миграция: добавляем колонку category_id если её нет
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'role_presets' AND column_name = 'category_id'
+                ) THEN
+                    ALTER TABLE role_presets ADD COLUMN category_id INT REFERENCES preset_categories(category_id) ON DELETE SET NULL;
                 END IF;
             END $$;
             """
