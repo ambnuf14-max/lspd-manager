@@ -237,7 +237,8 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     info = discord.ui.TextInput(
         label="Важно",
         default="Никнейм на сервере должен быть в формате: Name Surname (OOC Nick)",
-        style=discord.TextStyle.short,
+        style=discord.TextStyle.long,
+        max_length=100,
         required=False,
     )
 
