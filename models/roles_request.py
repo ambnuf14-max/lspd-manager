@@ -954,6 +954,8 @@ class CreateCategoryTypeView(discord.ui.View):
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, emoji="✖", row=1)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         await self.parent_view.refresh_categories()
         embed = discord.Embed(
             title="📁 Управление категориями",
@@ -961,7 +963,7 @@ class CreateCategoryTypeView(discord.ui.View):
                         "Структура: **Категория → Подкатегория → Пресет**",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
 
 class SelectParentCategoryView(discord.ui.View):
@@ -1160,13 +1162,15 @@ class CategoryEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         await self.parent_view.refresh_categories()
         embed = discord.Embed(
             title="📁 Управление категориями",
             description="Категории позволяют группировать пресеты.",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
 
 class CategoryRenameModal(discord.ui.Modal, title="Редактировать категорию"):
@@ -1287,6 +1291,8 @@ class ConfirmDeleteCategoryView(discord.ui.View):
 
     @discord.ui.button(label="Да, удалить", style=discord.ButtonStyle.danger, emoji="🗑")
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         async with self.bot.db_pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM preset_categories WHERE category_id = $1",
@@ -1305,7 +1311,7 @@ class ConfirmDeleteCategoryView(discord.ui.View):
                 description=f"Категория **«{self.category['name']}»** удалена!",
                 color=discord.Color.red()
             )
-            await interaction.response.edit_message(content=None, embed=embed, view=real_parent)
+            await interaction.edit_original_response(content=None, embed=embed, view=real_parent)
         else:
             # Это CategoryManagementView
             await self.parent_view.refresh_categories()
@@ -1314,10 +1320,12 @@ class ConfirmDeleteCategoryView(discord.ui.View):
                 description=f"Категория **«{self.category['name']}»** удалена!",
                 color=discord.Color.red()
             )
-            await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+            await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, emoji="✖")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         # Проверяем, является ли parent_view CategoryContentView
         if hasattr(self.parent_view, 'load_content'):
             # Это CategoryContentView
@@ -1328,7 +1336,7 @@ class ConfirmDeleteCategoryView(discord.ui.View):
                 description="Удаление отменено",
                 color=discord.Color.blue()
             )
-            await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+            await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
         else:
             # Это CategoryManagementView
             await self.parent_view.refresh_categories()
@@ -1337,7 +1345,7 @@ class ConfirmDeleteCategoryView(discord.ui.View):
                 description="Удаление отменено",
                 color=discord.Color.blue()
             )
-            await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+            await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
 
 class BackToCategoriesButton(discord.ui.Button):
@@ -1352,6 +1360,8 @@ class BackToCategoriesButton(discord.ui.Button):
         self.parent_view = parent_view
 
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
         await self.parent_view.refresh_categories()
         embed = discord.Embed(
             title="📁 Управление категориями и пресетами",
@@ -1360,7 +1370,7 @@ class BackToCategoriesButton(discord.ui.Button):
                         "Выберите категорию для просмотра пресетов или создайте новую",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
 
 # ============== УПРАВЛЕНИЕ ПРЕСЕТАМИ ==============
@@ -1537,6 +1547,8 @@ class RejectReasonEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         await self.parent_view.refresh_reasons()
         embed = discord.Embed(
             title="📋 Настройка причин отказа",
@@ -1544,7 +1556,7 @@ class RejectReasonEditView(discord.ui.View):
                         "💡 **Подсказка:** Вы можете настроить текст сообщения, которое будет отправлено пользователю в ЛС",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
 class RejectReasonCreateModal(discord.ui.Modal, title="Добавить причину отказа"):
@@ -1669,6 +1681,8 @@ class ConfirmDeleteReasonView(discord.ui.View):
 
     @discord.ui.button(label="Да, удалить", style=discord.ButtonStyle.danger, emoji="🗑")
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         async with self.bot.db_pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM reject_reasons WHERE reason_id = $1",
@@ -1683,17 +1697,19 @@ class ConfirmDeleteReasonView(discord.ui.View):
             description=f"Причина **«{self.reason['reason_text']}»** удалена!",
             color=discord.Color.red()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, emoji="✖")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         await self.parent_view.refresh_reasons()
         embed = discord.Embed(
             title="📋 Настройка причин отказа",
             description="Удаление отменено",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
 
 # ============== ВЫБОР КАТЕГОРИИ ПРИ СОЗДАНИИ ПРЕСЕТА ==============
@@ -1821,13 +1837,15 @@ class BackToPresetsButton(discord.ui.Button):
         self.parent_view = parent_view
 
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
         await self.parent_view.refresh_presets()
         embed = discord.Embed(
             title="🎭 Управление пресетами",
             description="Выберите действие или пресет для редактирования",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
 class PresetManagementSelect(discord.ui.Select):
@@ -1972,13 +1990,15 @@ class PresetEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=2)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         await self.parent_view.refresh_presets()
         embed = discord.Embed(
             title="⚙ Управление пресетами",
             description="Выберите действие или пресет для редактирования",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
 # ============== ИЗМЕНЕНИЕ КАТЕГОРИИ ПРЕСЕТА ==============
@@ -2087,13 +2107,15 @@ class ChangePresetCategorySelect(discord.ui.Select):
 
         logger.info(f"Категория пресета '{self.preset['name']}' изменена на '{cat_name}' пользователем {interaction.user.display_name}")
 
+        await interaction.response.defer()
+
         await self.parent_view.refresh_presets()
         embed = discord.Embed(
             title="🎭 Управление пресетами",
             description=f"Категория пресета **{self.preset['name']}** изменена на **{cat_name}**!",
             color=discord.Color.green()
         )
-        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
 class RemoveFromCategoryButton(discord.ui.Button):
@@ -2120,13 +2142,15 @@ class RemoveFromCategoryButton(discord.ui.Button):
 
         logger.info(f"Пресет '{self.preset['name']}' убран из категории пользователем {interaction.user.display_name}")
 
+        await interaction.response.defer()
+
         await self.parent_view.refresh_presets()
         embed = discord.Embed(
             title="🎭 Управление пресетами",
             description=f"Пресет **{self.preset['name']}** убран из категории!",
             color=discord.Color.green()
         )
-        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
 class BackToPresetEditButton(discord.ui.Button):
@@ -2301,6 +2325,8 @@ class SaveRolesButton(discord.ui.Button):
 
         logger.info(f"Роли пресета '{self.parent_view.preset['name']}' обновлены пользователем {interaction.user.display_name}")
 
+        await interaction.response.defer()
+
         # Возвращаемся к списку пресетов
         await self.parent_view.parent_view.refresh_presets()
         embed = discord.Embed(
@@ -2308,7 +2334,7 @@ class SaveRolesButton(discord.ui.Button):
             description=f"Роли пресета **{self.parent_view.preset['name']}** успешно обновлены!",
             color=discord.Color.green()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view.parent_view)
 
 
 class CancelRolesButton(discord.ui.Button):
@@ -2324,13 +2350,15 @@ class CancelRolesButton(discord.ui.Button):
         self.parent_view = parent_view
 
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
         await self.parent_view.parent_view.refresh_presets()
         embed = discord.Embed(
             title="⚙ Управление пресетами",
             description="Редактирование отменено",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view.parent_view)
 
 
 # ============== ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ==============
@@ -2346,6 +2374,8 @@ class ConfirmDeleteView(discord.ui.View):
 
     @discord.ui.button(label="Да, удалить", style=discord.ButtonStyle.danger, emoji="🗑")
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         async with self.bot.db_pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM role_presets WHERE preset_id = $1",
@@ -2360,17 +2390,19 @@ class ConfirmDeleteView(discord.ui.View):
             description=f"Пресет **{self.preset['name']}** удален!",
             color=discord.Color.red()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, emoji="✖")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         await self.parent_view.refresh_presets()
         embed = discord.Embed(
             title="⚙ Управление пресетами",
             description="Удаление отменено",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
 
 # ============== МОДАЛЬНЫЕ ОКНА ==============
@@ -2480,6 +2512,9 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
                     )
                     return
 
+            # Все валидации прошли, используем defer для продления времени ответа
+            await interaction.response.defer()
+
             # Сохранение в БД с категорией
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
@@ -2518,7 +2553,7 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
                         description=f"Пресет **{self.preset_name.value}** создан!\nРоли: {role_list}",
                         color=discord.Color.green()
                     )
-                    await interaction.response.edit_message(embed=embed, view=self.parent_view)
+                    await interaction.edit_original_response(embed=embed, view=self.parent_view)
                 else:
                     # Это PresetManagementView
                     await self.parent_view.refresh_presets()
@@ -2527,9 +2562,9 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
                         description=f"Пресет **{self.preset_name.value}** создан!\nРоли: {role_list}",
                         color=discord.Color.green()
                     )
-                    await interaction.response.edit_message(embed=embed, view=self.parent_view)
+                    await interaction.edit_original_response(embed=embed, view=self.parent_view)
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"Пресет **'{self.preset_name.value}'** создан!\nРоли: {role_list}",
                     ephemeral=True
                 )
@@ -2620,6 +2655,9 @@ class PresetEditInfoModal(discord.ui.Modal, title="Редактировать п
                     )
                     return
 
+            # Все валидации прошли, используем defer для продления времени ответа
+            await interaction.response.defer()
+
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE role_presets SET name = $1, description = $2, emoji = $3, rank_group_role_id = $4 WHERE preset_id = $5",
@@ -2638,7 +2676,7 @@ class PresetEditInfoModal(discord.ui.Modal, title="Редактировать п
                 description=f"Пресет **{self.preset_name.value}** обновлен!",
                 color=discord.Color.green()
             )
-            await interaction.response.edit_message(embed=embed, view=self.parent_view)
+            await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
         except Exception as e:
             logger.error(f"Ошибка при обновлении пресета: {e}", exc_info=True)
