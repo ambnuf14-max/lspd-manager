@@ -281,7 +281,7 @@ class PresetCategorySelect(discord.ui.Select):
 
             async with self.bot.db_pool.acquire() as conn:
                 preset = await conn.fetchrow(
-                    "SELECT preset_id, name, role_ids, description, emoji FROM role_presets WHERE preset_id = $1",
+                    "SELECT preset_id, name, role_ids, description, emoji, category_id FROM role_presets WHERE preset_id = $1",
                     preset_id
                 )
 
@@ -312,6 +312,7 @@ class PresetCategorySelect(discord.ui.Select):
                 preset=dict(preset),
                 embed=self.embed,
                 user=self.user,
+                bot=self.bot,
                 original_message=interaction.message,
                 original_view=self.view
             )
@@ -334,22 +335,25 @@ class PresetCategorySelect(discord.ui.Select):
 class ConfirmPresetView(discord.ui.View):
     """View для подтверждения применения пресета"""
 
-    def __init__(self, preset: dict, embed: discord.Embed, user: discord.User, original_message, original_view):
+    def __init__(self, preset: dict, embed: discord.Embed, user: discord.User, bot, original_message, original_view):
         super().__init__(timeout=60)
         self.preset = preset
         self.embed = embed
         self.user = user
+        self.bot = bot
         self.original_message = original_message
         self.original_view = original_view
 
     @discord.ui.button(label="Да", style=discord.ButtonStyle.green, emoji="✅")
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Подтверждение применения пресета"""
+        from bot.config import BASE_LSPD_ROLE_ID
+
         guild = interaction.guild
         member = guild.get_member(self.user.id)
 
         preset_name = self.preset['name']
-        role_ids = self.preset['role_ids']
+        role_ids = list(self.preset['role_ids'])  # Копируем список ролей из пресета
 
         logger.info(f"Пресет '{preset_name}' применяется к {self.user.display_name} ({self.user.id}) администратором {interaction.user.display_name}")
 
@@ -358,11 +362,48 @@ class ConfirmPresetView(discord.ui.View):
             await interaction.response.edit_message(content="Пользователь больше не на сервере.", view=None)
             return
 
-        # Выдача ролей из пресета
+        # Получаем корневую категорию (отдел) для получения department_role_id
+        department_role_id = None
+        if self.preset.get('category_id'):
+            async with self.bot.db_pool.acquire() as conn:
+                # Получаем корневую категорию (отдел)
+                # Если это подкатегория, получаем её родителя
+                category = await conn.fetchrow(
+                    "SELECT category_id, parent_id, department_role_id FROM preset_categories WHERE category_id = $1",
+                    self.preset['category_id']
+                )
+
+                if category:
+                    if category['parent_id'] is not None:
+                        # Это подкатегория, получаем родительскую категорию (отдел)
+                        parent_category = await conn.fetchrow(
+                            "SELECT department_role_id FROM preset_categories WHERE category_id = $1",
+                            category['parent_id']
+                        )
+                        if parent_category:
+                            department_role_id = parent_category['department_role_id']
+                    else:
+                        # Это корневая категория (отдел)
+                        department_role_id = category['department_role_id']
+
+        # Формируем итоговый список ролей: Базовая роль LSPD + Роль отдела + Роли из пресета
+        all_role_ids = []
+
+        # 1. Добавляем базовую роль LSPD
+        all_role_ids.append(BASE_LSPD_ROLE_ID)
+
+        # 2. Добавляем роль отдела (если есть)
+        if department_role_id:
+            all_role_ids.append(department_role_id)
+
+        # 3. Добавляем роли из пресета (ранг)
+        all_role_ids.extend(role_ids)
+
+        # Выдача ролей
         success_roles = []
         failed_roles = []
 
-        for role_id in role_ids:
+        for role_id in all_role_ids:
             role = guild.get_role(role_id)
             if not role:
                 failed_roles.append(f"ID {role_id} (роль не найдена)")
@@ -986,6 +1027,13 @@ class CategoryCreateModal(discord.ui.Modal, title="Создать категор
         max_length=50
     )
 
+    department_role_id_input = discord.ui.TextInput(
+        label="ID роли отдела (для корневых категорий)",
+        placeholder="Оставьте пустым для подкатегорий",
+        required=False,
+        max_length=30
+    )
+
     def __init__(self, bot, parent_view, parent_id=None):
         super().__init__()
         self.bot = bot
@@ -998,13 +1046,34 @@ class CategoryCreateModal(discord.ui.Modal, title="Создать категор
             # Нормализуем эмодзи для сохранения в БД
             emoji_value = normalize_emoji_for_storage(emoji_input, interaction.guild) if emoji_input else None
 
+            # Парсинг ID роли отдела
+            department_role_id = None
+            if self.department_role_id_input.value and self.department_role_id_input.value.strip():
+                try:
+                    department_role_id = int(self.department_role_id_input.value.strip())
+                    # Проверяем существование роли
+                    role = interaction.guild.get_role(department_role_id)
+                    if not role:
+                        await interaction.response.send_message(
+                            f"⚠️ Роль с ID {department_role_id} не найдена на сервере!",
+                            ephemeral=True
+                        )
+                        return
+                except ValueError:
+                    await interaction.response.send_message(
+                        "❌ Неверный формат ID роли! Используйте только числа.",
+                        ephemeral=True
+                    )
+                    return
+
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
-                    "INSERT INTO preset_categories (name, parent_id, created_by, created_at, emoji) VALUES ($1, $2, $3, NOW(), $4)",
+                    "INSERT INTO preset_categories (name, parent_id, created_by, created_at, emoji, department_role_id) VALUES ($1, $2, $3, NOW(), $4, $5)",
                     self.category_name.value,
                     self.parent_id,
                     interaction.user.id,
-                    emoji_value
+                    emoji_value,
+                    department_role_id
                 )
 
             logger.info(f"Категория '{self.category_name.value}' создана пользователем {interaction.user.display_name}")
@@ -1123,17 +1192,49 @@ class CategoryRenameModal(discord.ui.Modal, title="Редактировать к
         )
         self.add_item(self.emoji)
 
+        # Поле для ID роли отдела (только для корневых категорий)
+        dept_role_default = str(self.category.get('department_role_id', '')) if self.category.get('department_role_id') else ''
+        self.department_role_id_input = discord.ui.TextInput(
+            label="ID роли отдела (для корневых)",
+            placeholder="Оставьте пустым чтобы убрать",
+            default=dept_role_default,
+            required=False,
+            max_length=30
+        )
+        self.add_item(self.department_role_id_input)
+
     async def on_submit(self, interaction: discord.Interaction):
         try:
             emoji_input = self.emoji.value.strip() if self.emoji.value else None
             # Нормализуем эмодзи для сохранения в БД
             emoji_value = normalize_emoji_for_storage(emoji_input, interaction.guild) if emoji_input else None
 
+            # Парсинг ID роли отдела
+            department_role_id = None
+            if self.department_role_id_input.value and self.department_role_id_input.value.strip():
+                try:
+                    department_role_id = int(self.department_role_id_input.value.strip())
+                    # Проверяем существование роли
+                    role = interaction.guild.get_role(department_role_id)
+                    if not role:
+                        await interaction.response.send_message(
+                            f"⚠️ Роль с ID {department_role_id} не найдена на сервере!",
+                            ephemeral=True
+                        )
+                        return
+                except ValueError:
+                    await interaction.response.send_message(
+                        "❌ Неверный формат ID роли! Используйте только числа.",
+                        ephemeral=True
+                    )
+                    return
+
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE preset_categories SET name = $1, emoji = $2 WHERE category_id = $3",
+                    "UPDATE preset_categories SET name = $1, emoji = $2, department_role_id = $3 WHERE category_id = $4",
                     self.category_name.value,
                     emoji_value,
+                    department_role_id,
                     self.category['category_id']
                 )
 

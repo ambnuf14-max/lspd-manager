@@ -117,6 +117,20 @@ async def setup_db(bot):
             END $$;
             """
         )
+        # Миграция: добавляем колонку department_role_id в preset_categories если её нет
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'preset_categories' AND column_name = 'department_role_id'
+                ) THEN
+                    ALTER TABLE preset_categories ADD COLUMN department_role_id BIGINT;
+                END IF;
+            END $$;
+            """
+        )
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS preset_audit (

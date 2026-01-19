@@ -21,6 +21,7 @@ PRESET_ADMIN_ROLE_ID = os.getenv("PRESET_ADMIN_ROLE_ID")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ============ DISCORD ROLES ============
+BASE_LSPD_ROLE_ID = int(os.getenv("BASE_LSPD_ROLE_ID", "1350364976682106982"))
 FTO_ROLE_NAME = os.getenv("FTO_ROLE_NAME", "OO: Field Training Officer")
 INTERN_ROLE_NAME = os.getenv("INTERN_ROLE_NAME", "Police Officer I")
 
