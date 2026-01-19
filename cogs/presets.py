@@ -137,27 +137,217 @@ class PresetsV2(commands.Cog):
 
         try:
             async with self.bot.db_pool.acquire() as conn:
+                # Получаем информацию о пресете перед удалением для логирования
+                preset = await conn.fetchrow(
+                    "SELECT preset_id, name, role_ids, description FROM role_presets WHERE name = $1",
+                    name
+                )
+
+                if not preset:
+                    await interaction.response.send_message(
+                        f"❌ Пресет '{name}' не найден.",
+                        ephemeral=True
+                    )
+                    return
+
+                # Удаляем пресет
                 result = await conn.execute(
                     "DELETE FROM role_presets WHERE name = $1",
                     name
                 )
 
-            if result == "DELETE 0":
-                await interaction.response.send_message(
-                    f"❌ Пресет '{name}' не найден.",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    f"✅ Пресет '{name}' удален.",
-                    ephemeral=True
-                )
-                logger.info(f"Пресет '{name}' удален пользователем {interaction.user.display_name}")
+            # Логирование удаления пресета
+            await log_preset_audit(
+                self.bot,
+                preset['preset_id'],
+                preset['name'],
+                "delete",
+                interaction.user.id,
+                old_value={
+                    "role_ids": preset['role_ids'],
+                    "description": preset['description']
+                },
+                details=f"Пресет удален"
+            )
+
+            await interaction.response.send_message(
+                f"✅ Пресет '{name}' удален.",
+                ephemeral=True
+            )
+            logger.info(f"Пресет '{name}' удален пользователем {interaction.user.display_name}")
 
         except Exception as e:
             logger.error(f"Ошибка при удалении пресета: {e}", exc_info=True)
             await interaction.response.send_message(
                 f"❌ Ошибка при удалении пресета: {e}",
+                ephemeral=True
+            )
+
+    @preset_group.command(name="history", description="История изменений пресета")
+    @app_commands.describe(name="Название пресета (опционально - показать всю историю)")
+    async def preset_history(self, interaction: discord.Interaction, name: str = None):
+        """Показать историю изменений пресета"""
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                if name:
+                    # История конкретного пресета
+                    history = await conn.fetch(
+                        "SELECT * FROM preset_audit WHERE preset_name = $1 ORDER BY timestamp DESC LIMIT 50",
+                        name
+                    )
+                    title = f"📜 История пресета: {name}"
+                else:
+                    # Вся история
+                    history = await conn.fetch(
+                        "SELECT * FROM preset_audit ORDER BY timestamp DESC LIMIT 50"
+                    )
+                    title = "📜 История всех пресетов"
+
+            if not history:
+                await interaction.response.send_message(
+                    "ℹ️ История изменений пуста.",
+                    ephemeral=True
+                )
+                return
+
+            embed = discord.Embed(
+                title=title,
+                color=discord.Color.blue(),
+                timestamp=datetime.now()
+            )
+
+            for entry in history[:25]:
+                action_emoji = {
+                    'create': '✅',
+                    'delete': '❌',
+                    'update': '✏️'
+                }.get(entry['action'], '📝')
+
+                performer = interaction.guild.get_member(entry['performed_by'])
+                performer_name = performer.display_name if performer else f"ID {entry['performed_by']}"
+
+                value = f"**Действие:** {action_emoji} {entry['action']}\n"
+                value += f"**Кто:** {performer_name}\n"
+                value += f"**Когда:** {entry['timestamp'].strftime('%d.%m.%Y %H:%M')}\n"
+                if entry['details']:
+                    value += f"**Детали:** {entry['details']}\n"
+
+                embed.add_field(
+                    name=f"{entry['preset_name']} (ID: {entry['audit_id']})",
+                    value=value,
+                    inline=False
+                )
+
+            embed.set_footer(text=f"Показано записей: {len(history[:25])}")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            logger.info(f"История пресетов запрошена пользователем {interaction.user.display_name}")
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении истории пресетов: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Ошибка при получении истории: {e}",
+                ephemeral=True
+            )
+
+    @preset_group.command(name="stats", description="Статистика по пресетам")
+    async def preset_stats(self, interaction: discord.Interaction):
+        """Показать статистику по пресетам"""
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                # Общее количество пресетов
+                total_presets = await conn.fetchval("SELECT COUNT(*) FROM role_presets")
+
+                # Количество действий в audit log
+                total_actions = await conn.fetchval("SELECT COUNT(*) FROM preset_audit")
+
+                # Количество действий по типам
+                action_stats = await conn.fetch(
+                    "SELECT action, COUNT(*) as count FROM preset_audit GROUP BY action ORDER BY count DESC"
+                )
+
+                # Топ-5 активных пользователей
+                top_users = await conn.fetch(
+                    """
+                    SELECT performed_by, COUNT(*) as count
+                    FROM preset_audit
+                    GROUP BY performed_by
+                    ORDER BY count DESC
+                    LIMIT 5
+                    """
+                )
+
+                # Последние 5 действий
+                recent_actions = await conn.fetch(
+                    """
+                    SELECT preset_name, action, performed_by, timestamp
+                    FROM preset_audit
+                    ORDER BY timestamp DESC
+                    LIMIT 5
+                    """
+                )
+
+            embed = discord.Embed(
+                title="📊 Статистика по пресетам",
+                color=discord.Color.green(),
+                timestamp=datetime.now()
+            )
+
+            # Общая информация
+            embed.add_field(
+                name="📈 Общая информация",
+                value=f"**Всего пресетов:** {total_presets}\n**Всего действий:** {total_actions}",
+                inline=False
+            )
+
+            # Статистика по действиям
+            if action_stats:
+                actions_text = "\n".join([
+                    f"**{row['action']}:** {row['count']}" for row in action_stats
+                ])
+                embed.add_field(
+                    name="📝 Действия по типам",
+                    value=actions_text,
+                    inline=False
+                )
+
+            # Топ пользователей
+            if top_users:
+                users_text = ""
+                for i, row in enumerate(top_users, 1):
+                    user = interaction.guild.get_member(row['performed_by'])
+                    user_name = user.display_name if user else f"ID {row['performed_by']}"
+                    users_text += f"{i}. **{user_name}** - {row['count']} действий\n"
+                embed.add_field(
+                    name="🏆 Топ-5 активных пользователей",
+                    value=users_text,
+                    inline=False
+                )
+
+            # Последние действия
+            if recent_actions:
+                recent_text = ""
+                for row in recent_actions:
+                    action_emoji = {
+                        'create': '✅',
+                        'delete': '❌',
+                        'update': '✏️'
+                    }.get(row['action'], '📝')
+                    user = interaction.guild.get_member(row['performed_by'])
+                    user_name = user.display_name if user else f"ID {row['performed_by']}"
+                    recent_text += f"{action_emoji} **{row['preset_name']}** - {row['action']} ({user_name})\n"
+                embed.add_field(
+                    name="🕒 Последние 5 действий",
+                    value=recent_text,
+                    inline=False
+                )
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            logger.info(f"Статистика пресетов запрошена пользователем {interaction.user.display_name}")
+
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Ошибка при получении статистики: {e}",
                 ephemeral=True
             )
 
@@ -288,15 +478,29 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
 
             # Сохранение в БД
             async with self.bot.db_pool.acquire() as conn:
-                await conn.execute(
+                preset_id = await conn.fetchval(
                     "INSERT INTO role_presets (name, role_ids, created_by, created_at, description) "
-                    "VALUES ($1, $2, $3, $4, $5)",
+                    "VALUES ($1, $2, $3, $4, $5) RETURNING preset_id",
                     self.preset_name.value,
                     role_ids,
                     interaction.user.id,
                     datetime.now(),
                     self.description.value if self.description.value else None
                 )
+
+            # Логирование создания пресета
+            await log_preset_audit(
+                self.bot,
+                preset_id,
+                self.preset_name.value,
+                "create",
+                interaction.user.id,
+                new_value={
+                    "role_ids": role_ids,
+                    "description": self.description.value if self.description.value else None
+                },
+                details=f"Создан пресет с {len(valid_roles)} ролями"
+            )
 
             role_list = ", ".join([r.name for r in valid_roles])
             await interaction.response.send_message(

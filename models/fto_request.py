@@ -5,18 +5,20 @@ import discord
 from discord.ext import tasks
 
 from bot.config import FTO_ROLE_NAME, INTERN_ROLE_NAME, FTO_QUEUE_CLEANUP_HOURS, FTO_QUEUE_CHECK_MINUTES
+from bot.logger import get_logger
 
-channel_id = None
-message_id = None
+logger = get_logger('fto')
 
 
 class FTOView(discord.ui.View):
-    def __init__(self, bot):
+    def __init__(self, bot, channel_id=None, message_id=None):
         super().__init__(timeout=None)
         self.bot = bot
+        self.channel_id = channel_id
+        self.message_id = message_id
         self.cleanup_task.start()
-        self.add_item(EnterQueue())
-        self.add_item(LeaveButton())
+        self.add_item(EnterQueue(self))
+        self.add_item(LeaveButton(self))
 
     @tasks.loop(minutes=FTO_QUEUE_CHECK_MINUTES)
     async def cleanup_task(self):
@@ -26,15 +28,17 @@ class FTOView(discord.ui.View):
                 expired_entries = await self.fetch_expired_entries(conn)
                 for entry in expired_entries:
                     await self.process_expired_entry(conn, entry)
+                if expired_entries:
+                    logger.info(f"Очищено {len(expired_entries)} устаревших записей из очереди FTO")
         except Exception as e:
-            print(f"Ошибка в фоновой задаче: {e}")
-            traceback.print_exc()
+            logger.error(f"Ошибка в фоновой задаче cleanup: {e}", exc_info=True)
 
     @staticmethod
     async def fetch_expired_entries(conn):
         """Получение устаревших записей из базы данных."""
         return await conn.fetch(
-            f"SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - INTERVAL '{FTO_QUEUE_CLEANUP_HOURS} hours'"
+            "SELECT * FROM queue WHERE finished_at IS NULL AND created_at < NOW() - make_interval(hours => $1)",
+            FTO_QUEUE_CLEANUP_HOURS
         )
 
     async def process_expired_entry(self, conn, entry):
@@ -45,13 +49,17 @@ class FTOView(discord.ui.View):
 
     async def update_embed_for_expired_entry(self, entry):
         """Обновление Embed для устаревшей записи."""
-        channel = self.bot.get_channel(channel_id)
+        if not self.channel_id or not self.message_id:
+            logger.warning("channel_id или message_id не установлены, пропускаем обновление embed")
+            return
+
+        channel = self.bot.get_channel(self.channel_id)
         if not channel:
-            print(f"Канал {channel_id} не найден")
+            logger.warning(f"Канал {self.channel_id} не найден")
             return
 
         try:
-            message = await channel.fetch_message(message_id)
+            message = await channel.fetch_message(self.message_id)
             embed = message.embeds[0] if message.embeds else None
 
             if embed:
@@ -63,11 +71,11 @@ class FTOView(discord.ui.View):
                 )
                 await message.edit(embed=embed)
         except discord.NotFound:
-            print(f"Сообщение {message_id} не найдено.")
+            logger.warning(f"Сообщение {self.message_id} не найдено.")
         except discord.Forbidden:
-            print(f"Нет прав для редактирования сообщения {entry['message_id']}.")
+            logger.error(f"Нет прав для редактирования сообщения {self.message_id}.")
         except Exception as e:
-            print(f"Ошибка при обновлении сообщения: {e}")
+            logger.error(f"Ошибка при обновлении сообщения: {e}")
 
     async def notify_user_about_expiration(self, entry):
         """Уведомление пользователя об истечении времени в очереди."""
@@ -83,7 +91,7 @@ class FTOView(discord.ui.View):
                 "❌ Вы были удалены из очереди, так как никто не нашёлся за 3 часа."
             )
         except Exception as e:
-            print(f"Пользователь закрыл ЛС для бота. {e}")
+            logger.warning(f"Не удалось отправить уведомление пользователю {user_id}: {e}")
 
     @staticmethod
     async def mark_entry_as_finished(conn, entry):
@@ -130,12 +138,13 @@ class FTOView(discord.ui.View):
 
 # noinspection PyUnresolvedReferences
 class EnterQueue(discord.ui.Button):
-    def __init__(self):
+    def __init__(self, fto_view: FTOView):
         super().__init__(
             label="Войти в очередь",
             custom_id="enter_queue",
             style=discord.ButtonStyle.green,
         )
+        self.fto_view = fto_view
 
     async def callback(self, interaction: discord.Interaction):
         try:
@@ -145,9 +154,9 @@ class EnterQueue(discord.ui.Button):
                 else discord.Embed()
             )
 
-            global channel_id, message_id
-            channel_id = interaction.channel.id
-            message_id = interaction.message.id
+            # Сохраняем channel_id и message_id в FTOView для cleanup_task
+            self.fto_view.channel_id = interaction.channel.id
+            self.fto_view.message_id = interaction.message.id
 
             fto_role = discord.utils.find(
                 lambda r: r.name == FTO_ROLE_NAME,
@@ -190,7 +199,7 @@ class EnterQueue(discord.ui.Button):
                         datetime.now(),
                         interaction.user.display_name,
                     )
-                    print(result)
+                    logger.info(f"FTO {interaction.user.display_name} добавлен в очередь, queue_id={result['queue_id']}")
                     field_name = "Свободные FTO"
 
                 elif intern_role in interaction.user.roles:
@@ -201,9 +210,8 @@ class EnterQueue(discord.ui.Button):
                         datetime.now(),
                         interaction.user.display_name,
                     )
-                    print(result)
+                    logger.info(f"Стажёр {interaction.user.display_name} добавлен в очередь, queue_id={result['queue_id']}")
                     field_name = "Стажеры в очереди"
-            print(result)
 
             if fto_role in interaction.user.roles:
                 await self.check_and_pair_fto(interaction, result["queue_id"], embed)
@@ -223,8 +231,7 @@ class EnterQueue(discord.ui.Button):
             await interaction.response.send_message(
                 "❌ Произошла ошибка. Обратитесь к администратору.", ephemeral=True
             )
-            print(f"Произошла ошибка в модуле FTO при входе в очередь. {e}")
-            traceback.print_exc()  # Логируем ошибку
+            logger.error(f"Ошибка в модуле FTO при входе в очередь: {e}", exc_info=True)
 
     @staticmethod
     async def update_embed_field(embed: discord.Embed, field_name: str, value: str):
@@ -256,25 +263,33 @@ class EnterQueue(discord.ui.Button):
     async def check_and_pair_fto(self, interaction, queue_id, embed):
         """Проверяет наличие стажёра для FTO"""
         try:
-            print("Проверяем наличие стажёра для FTO...")
+            logger.info(f"Проверяем наличие стажёра для FTO {interaction.user.display_name}...")
             async with interaction.client.db_pool.acquire() as conn:
-                intern_entry = await conn.fetchrow(
-                    "SELECT * FROM queue WHERE probationary_id IS NOT NULL AND finished_at IS NULL ORDER BY created_at "
-                    "LIMIT 1 "
-                )
-            print("Результат запроса:", intern_entry)
+                # Используем транзакцию с SELECT FOR UPDATE для предотвращения race condition
+                async with conn.transaction():
+                    intern_entry = await conn.fetchrow(
+                        "SELECT * FROM queue WHERE probationary_id IS NOT NULL AND finished_at IS NULL "
+                        "ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
+                    )
+
+                    if intern_entry:
+                        logger.info(f"Найден стажёр: {intern_entry['display_name']}")
+                        # Завершаем обе записи в рамках одной транзакции
+                        await conn.execute(
+                            "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
+                            datetime.now(),
+                            queue_id,
+                        )
+                        await conn.execute(
+                            "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
+                            datetime.now(),
+                            intern_entry["queue_id"],
+                        )
+                    else:
+                        logger.info("Свободных стажёров не найдено")
+                        return  # Нет стажёров - выходим
+
             if intern_entry:
-                async with interaction.client.db_pool.acquire() as conn:
-                    await conn.execute(
-                        "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
-                        datetime.now(),
-                        queue_id,
-                    )
-                    await conn.execute(
-                        "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
-                        datetime.now(),
-                        intern_entry["queue_id"],
-                    )
 
                 await self.remove_user_from_embed(
                     embed, interaction.user.display_name, "Свободные FTO"
@@ -292,50 +307,53 @@ class EnterQueue(discord.ui.Button):
                             f"🎉 Вы нашли FTO: <@{interaction.user.id}> ({interaction.user.display_name})!"
                         )
                     except Exception as e:
-                        print(
-                            f"Модуль FTO Search: Ошибка при отправке уведомления: {e}"
-                        )
+                        logger.warning(f"Не удалось отправить уведомление стажёру: {e}")
 
                 try:
                     await interaction.user.send(
                         f"🎉 Вы нашли стажёра: <@{intern_entry['probationary_id']}> ({intern_entry['display_name']})!"
                     )
                 except Exception as e:
-                    print(f"Модуль FTO Search: Ошибка при отправке уведомления: {e}")
+                    logger.warning(f"Не удалось отправить уведомление FTO: {e}")
                 await interaction.response.edit_message(embed=embed)
 
-                # await interaction.edit_original_response(embed=embed)
         except Exception as e:
-            print(f"Ошибка в проверки наличия стажера для ФТО: {e}")
-            traceback.print_exc()  # Логируем ошибку
+            logger.error(f"Ошибка при проверке наличия стажёра для FTO: {e}", exc_info=True)
             await interaction.response.send_message(
-                "❌ Произошла ошибка. Обратитесь к администратору. Код ошибки",
+                "❌ Произошла ошибка. Обратитесь к администратору.",
                 ephemeral=True,
             )
 
     async def check_and_pair_intern(self, interaction, queue_id, embed):
         """Проверяет наличие FTO для стажёра"""
         try:
-            print("Проверяем наличие FTO для стажёра...")
+            logger.info(f"Проверяем наличие FTO для стажёра {interaction.user.display_name}...")
             async with interaction.client.db_pool.acquire() as conn:
-                fto_entry = await conn.fetchrow(
-                    "SELECT * FROM queue WHERE officer_id IS NOT NULL AND finished_at IS NULL ORDER BY created_at "
-                    "LIMIT 1 "
-                )
-            print("Результат запроса:", fto_entry)
-            if fto_entry:
-                async with interaction.client.db_pool.acquire() as conn:
-                    await conn.execute(
-                        "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
-                        datetime.now(),
-                        queue_id,
-                    )
-                    await conn.execute(
-                        "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
-                        datetime.now(),
-                        fto_entry["queue_id"],
+                # Используем транзакцию с SELECT FOR UPDATE для предотвращения race condition
+                async with conn.transaction():
+                    fto_entry = await conn.fetchrow(
+                        "SELECT * FROM queue WHERE officer_id IS NOT NULL AND finished_at IS NULL "
+                        "ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
                     )
 
+                    if fto_entry:
+                        logger.info(f"Найден FTO: {fto_entry['display_name']}")
+                        # Завершаем обе записи в рамках одной транзакции
+                        await conn.execute(
+                            "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
+                            datetime.now(),
+                            queue_id,
+                        )
+                        await conn.execute(
+                            "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
+                            datetime.now(),
+                            fto_entry["queue_id"],
+                        )
+                    else:
+                        logger.info("Свободных FTO не найдено")
+                        return  # Нет FTO - выходим
+
+            if fto_entry:
                 await self.remove_user_from_embed(
                     embed, interaction.user.display_name, "Стажеры в очереди"
                 )
@@ -350,22 +368,19 @@ class EnterQueue(discord.ui.Button):
                             f"🎉 Вы нашли стажёра: <@{interaction.user.id}> ({interaction.user.display_name})!"
                         )
                     except Exception as e:
-                        print(
-                            f"Модуль FTO Search: Ошибка при отправке уведомления: {e}"
-                        )
+                        logger.warning(f"Не удалось отправить уведомление FTO: {e}")
 
                 try:
                     await interaction.user.send(
                         f"🎉 Вы нашли FTO: <@{fto_entry['officer_id']}> ({fto_entry['display_name']})!"
                     )
                 except Exception as e:
-                    print(f"Модуль FTO Search: Ошибка при отправке уведомления: {e}")
+                    logger.warning(f"Не удалось отправить уведомление стажёру: {e}")
 
                 await interaction.response.edit_message(embed=embed)
-                # await interaction.edit_original_response(embed=embed)
+
         except Exception as e:
-            print(f"Ошибка в проверки наличия ФТО для стажера: {e}")
-            traceback.print_exc()  # Логируем ошибку
+            logger.error(f"Ошибка при проверке наличия FTO для стажёра: {e}", exc_info=True)
             await interaction.response.send_message(
                 "❌ Произошла ошибка. Обратитесь к администратору.", ephemeral=True
             )
@@ -401,12 +416,13 @@ class EnterQueue(discord.ui.Button):
 
 # noinspection PyUnresolvedReferences
 class LeaveButton(discord.ui.Button):
-    def __init__(self):
+    def __init__(self, fto_view: FTOView):
         super().__init__(
             label="Выйти с очереди",
             custom_id="leave_queue",
             style=discord.ButtonStyle.red,
         )
+        self.fto_view = fto_view
 
     async def callback(self, interaction: discord.Interaction):
         try:
@@ -444,9 +460,10 @@ class LeaveButton(discord.ui.Button):
             await interaction.followup.send("👌 Вы покинули очередь.", ephemeral=True)
 
         except Exception as e:
-            error_message = "❌ Ошибка при обработке запроса."
-            await interaction.response.send_message(error_message, ephemeral=True)
-            traceback.print_exception(type(e), e, e.__traceback__)  # Логируем ошибку
+            logger.error(f"Ошибка при выходе из очереди: {e}", exc_info=True)
+            await interaction.response.send_message(
+                "❌ Ошибка при обработке запроса.", ephemeral=True
+            )
 
     @staticmethod
     async def remove_user_from_embed(embed: discord.Embed, user_name: str):
