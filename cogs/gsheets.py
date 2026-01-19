@@ -53,7 +53,7 @@ class gSheets(commands.Cog):
 
     @app_commands.command(name="update", description="Обновить роли в таблице")
     @app_commands.checks.has_role("Discord Administrator")
-    async def update(self, interaction=discord.Interaction):
+    async def update(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
         try:
             await update_roles(bot=self.bot)

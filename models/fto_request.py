@@ -213,19 +213,30 @@ class EnterQueue(discord.ui.Button):
                     logger.info(f"Стажёр {interaction.user.display_name} добавлен в очередь, queue_id={result['queue_id']}")
                     field_name = "Стажеры в очереди"
 
+            # Проверяем наличие пары
             if fto_role in interaction.user.roles:
-                await self.check_and_pair_fto(interaction, result["queue_id"], embed)
+                paired = await self.check_and_pair_fto(interaction, result["queue_id"], embed)
             else:
-                await self.check_and_pair_intern(interaction, result["queue_id"], embed)
+                paired = await self.check_and_pair_intern(interaction, result["queue_id"], embed)
 
-            await self.update_embed_field(
-                embed, field_name, interaction.user.display_name
-            )
+            # Если пара не найдена, добавляем пользователя в список
+            if not paired:
+                await self.update_embed_field(
+                    embed, field_name, interaction.user.display_name
+                )
+
             await interaction.response.edit_message(embed=embed)
-            await interaction.followup.send(
-                "✅ Вы вошли в очередь. Учтите, ваша позиция действительна 3 часа.",
-                ephemeral=True,
-            )
+
+            if paired:
+                await interaction.followup.send(
+                    "✅ Пара найдена! Проверьте личные сообщения.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    "✅ Вы вошли в очередь. Учтите, ваша позиция действительна 3 часа.",
+                    ephemeral=True,
+                )
 
         except Exception as e:
             await interaction.response.send_message(
@@ -260,8 +271,8 @@ class EnterQueue(discord.ui.Button):
         else:
             embed.add_field(name=field_name, value=value, inline=False)
 
-    async def check_and_pair_fto(self, interaction, queue_id, embed):
-        """Проверяет наличие стажёра для FTO"""
+    async def check_and_pair_fto(self, interaction, queue_id, embed) -> bool:
+        """Проверяет наличие стажёра для FTO. Возвращает True если пара найдена."""
         try:
             logger.info(f"Проверяем наличие стажёра для FTO {interaction.user.display_name}...")
             async with interaction.client.db_pool.acquire() as conn:
@@ -287,45 +298,40 @@ class EnterQueue(discord.ui.Button):
                         )
                     else:
                         logger.info("Свободных стажёров не найдено")
-                        return  # Нет стажёров - выходим
+                        return False
 
-            if intern_entry:
+            # Удаляем обоих из embed (если они там были)
+            await self.remove_user_from_embed(
+                embed, intern_entry["display_name"], "Стажеры в очереди"
+            )
 
-                await self.remove_user_from_embed(
-                    embed, interaction.user.display_name, "Свободные FTO"
-                )
-                await self.remove_user_from_embed(
-                    embed, intern_entry["display_name"], "Стажеры в очереди"
-                )
-
-                intern_user = interaction.guild.get_member(
-                    intern_entry["probationary_id"]
-                )
-                if intern_user:
-                    try:
-                        await intern_user.send(
-                            f"🎉 Вы нашли FTO: <@{interaction.user.id}> ({interaction.user.display_name})!"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Не удалось отправить уведомление стажёру: {e}")
-
+            # Отправляем уведомления
+            intern_user = interaction.guild.get_member(
+                intern_entry["probationary_id"]
+            )
+            if intern_user:
                 try:
-                    await interaction.user.send(
-                        f"🎉 Вы нашли стажёра: <@{intern_entry['probationary_id']}> ({intern_entry['display_name']})!"
+                    await intern_user.send(
+                        f"🎉 Вы нашли FTO: <@{interaction.user.id}> ({interaction.user.display_name})!"
                     )
                 except Exception as e:
-                    logger.warning(f"Не удалось отправить уведомление FTO: {e}")
-                await interaction.response.edit_message(embed=embed)
+                    logger.warning(f"Не удалось отправить уведомление стажёру: {e}")
+
+            try:
+                await interaction.user.send(
+                    f"🎉 Вы нашли стажёра: <@{intern_entry['probationary_id']}> ({intern_entry['display_name']})!"
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление FTO: {e}")
+
+            return True
 
         except Exception as e:
             logger.error(f"Ошибка при проверке наличия стажёра для FTO: {e}", exc_info=True)
-            await interaction.response.send_message(
-                "❌ Произошла ошибка. Обратитесь к администратору.",
-                ephemeral=True,
-            )
+            return False
 
-    async def check_and_pair_intern(self, interaction, queue_id, embed):
-        """Проверяет наличие FTO для стажёра"""
+    async def check_and_pair_intern(self, interaction, queue_id, embed) -> bool:
+        """Проверяет наличие FTO для стажёра. Возвращает True если пара найдена."""
         try:
             logger.info(f"Проверяем наличие FTO для стажёра {interaction.user.display_name}...")
             async with interaction.client.db_pool.acquire() as conn:
@@ -351,39 +357,35 @@ class EnterQueue(discord.ui.Button):
                         )
                     else:
                         logger.info("Свободных FTO не найдено")
-                        return  # Нет FTO - выходим
+                        return False
 
-            if fto_entry:
-                await self.remove_user_from_embed(
-                    embed, interaction.user.display_name, "Стажеры в очереди"
-                )
-                await self.remove_user_from_embed(
-                    embed, fto_entry["display_name"], "Свободные FTO"
-                )
+            # Удаляем FTO из embed
+            await self.remove_user_from_embed(
+                embed, fto_entry["display_name"], "Свободные FTO"
+            )
 
-                fto_user = interaction.guild.get_member(fto_entry["officer_id"])
-                if fto_user:
-                    try:
-                        await fto_user.send(
-                            f"🎉 Вы нашли стажёра: <@{interaction.user.id}> ({interaction.user.display_name})!"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Не удалось отправить уведомление FTO: {e}")
-
+            # Отправляем уведомления
+            fto_user = interaction.guild.get_member(fto_entry["officer_id"])
+            if fto_user:
                 try:
-                    await interaction.user.send(
-                        f"🎉 Вы нашли FTO: <@{fto_entry['officer_id']}> ({fto_entry['display_name']})!"
+                    await fto_user.send(
+                        f"🎉 Вы нашли стажёра: <@{interaction.user.id}> ({interaction.user.display_name})!"
                     )
                 except Exception as e:
-                    logger.warning(f"Не удалось отправить уведомление стажёру: {e}")
+                    logger.warning(f"Не удалось отправить уведомление FTO: {e}")
 
-                await interaction.response.edit_message(embed=embed)
+            try:
+                await interaction.user.send(
+                    f"🎉 Вы нашли FTO: <@{fto_entry['officer_id']}> ({fto_entry['display_name']})!"
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление стажёру: {e}")
+
+            return True
 
         except Exception as e:
             logger.error(f"Ошибка при проверке наличия FTO для стажёра: {e}", exc_info=True)
-            await interaction.response.send_message(
-                "❌ Произошла ошибка. Обратитесь к администратору.", ephemeral=True
-            )
+            return False
 
     @staticmethod
     async def remove_user_from_embed(

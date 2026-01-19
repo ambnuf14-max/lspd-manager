@@ -27,7 +27,7 @@ activity = discord.Game(name=BOT_ACTIVITY_NAME)
 intents = discord.Intents.all()
 bot = commands.Bot(
     command_prefix=COMMAND_PREFIX,
-    intents=discord.Intents.all(),
+    intents=intents,
     activity=activity,
     application_id=APPLICATION_ID,
 )
@@ -47,7 +47,7 @@ async def load_extensions():
         logger.info("FTO модуль отключен (ENABLE_FTO_AUTO_MESSAGE=false)")
 
     for filename in os.listdir("./cogs"):
-        if filename.endswith(".py") and not filename.__contains__("__init__"):
+        if filename.endswith(".py") and "__init__" not in filename:
             cog_name = filename[:-3]
 
             # Пропускаем отключенные модули

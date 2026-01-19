@@ -421,20 +421,27 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
         max_length=50
     )
 
+    description = discord.ui.TextInput(
+        label="Описание (опционально)",
+        placeholder="Краткое описание пресета",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=100
+    )
+
+    emoji = discord.ui.TextInput(
+        label="Эмодзи (одна эмодзи или пусто)",
+        placeholder="Например: 🚔 или оставьте пустым",
+        required=False,
+        max_length=10
+    )
+
     role_ids_input = discord.ui.TextInput(
         label="ID ролей через запятую",
         placeholder="123456789, 987654321, 111222333",
         style=discord.TextStyle.paragraph,
         required=True,
         max_length=500
-    )
-
-    description = discord.ui.TextInput(
-        label="Описание (опционально)",
-        placeholder="Краткое описание пресета",
-        style=discord.TextStyle.paragraph,
-        required=False,
-        max_length=200
     )
 
     def __init__(self, bot, guild):
@@ -450,7 +457,7 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
 
             if not role_ids:
                 await interaction.response.send_message(
-                    "❌ Не указаны ID ролей!",
+                    "Не указаны ID ролей!",
                     ephemeral=True
                 )
                 return
@@ -471,21 +478,25 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
 
             if invalid_roles:
                 await interaction.response.send_message(
-                    f"❌ Проблемы с ролями:\n" + "\n".join(f"• {r}" for r in invalid_roles),
+                    f"Проблемы с ролями:\n" + "\n".join(f"• {r}" for r in invalid_roles),
                     ephemeral=True
                 )
                 return
 
+            # Валидация эмодзи
+            emoji_value = self.emoji.value.strip() if self.emoji.value else None
+
             # Сохранение в БД
             async with self.bot.db_pool.acquire() as conn:
                 preset_id = await conn.fetchval(
-                    "INSERT INTO role_presets (name, role_ids, created_by, created_at, description) "
-                    "VALUES ($1, $2, $3, $4, $5) RETURNING preset_id",
+                    "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, emoji) "
+                    "VALUES ($1, $2, $3, $4, $5, $6) RETURNING preset_id",
                     self.preset_name.value,
                     role_ids,
                     interaction.user.id,
                     datetime.now(),
-                    self.description.value if self.description.value else None
+                    self.description.value if self.description.value else None,
+                    emoji_value
                 )
 
             # Логирование создания пресета
@@ -497,14 +508,16 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
                 interaction.user.id,
                 new_value={
                     "role_ids": role_ids,
-                    "description": self.description.value if self.description.value else None
+                    "description": self.description.value if self.description.value else None,
+                    "emoji": emoji_value
                 },
                 details=f"Создан пресет с {len(valid_roles)} ролями"
             )
 
             role_list = ", ".join([r.name for r in valid_roles])
+            emoji_str = f"{emoji_value} " if emoji_value else ""
             await interaction.response.send_message(
-                f"✅ Пресет **'{self.preset_name.value}'** создан!\n"
+                f"Пресет {emoji_str}**'{self.preset_name.value}'** создан!\n"
                 f"Роли: {role_list}",
                 ephemeral=True
             )
@@ -516,13 +529,13 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
 
         except ValueError:
             await interaction.response.send_message(
-                "❌ Неверный формат ID ролей! Используйте только числа через запятую.",
+                "Неверный формат ID ролей! Используйте только числа через запятую.",
                 ephemeral=True
             )
         except Exception as e:
             logger.error(f"Ошибка при создании пресета: {e}", exc_info=True)
             await interaction.response.send_message(
-                f"❌ Ошибка при создании пресета: {e}",
+                f"Ошибка при создании пресета: {e}",
                 ephemeral=True
             )
 

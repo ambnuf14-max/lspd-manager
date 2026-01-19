@@ -121,13 +121,24 @@ async def update_message(adm_channel, message_id, embed, view):
 
 
 async def send_button_message(bot, client_channel_id):
-    """Отправка сообщения с кнопкой в клиентский канал."""
+    """Отправка сообщения с кнопкой в клиентский канал или восстановление существующего."""
     client_channel = bot.get_channel(client_channel_id)
     try:
         view = ButtonView(bot)
+
+        # Проверяем последние сообщения на наличие кнопки от бота
+        async for message in client_channel.history(limit=50):
+            if message.author == bot.user and message.components:
+                # Найдено существующее сообщение с компонентами - восстанавливаем view
+                print(f"Найдено существующее сообщение с кнопкой (ID: {message.id}), восстанавливаем view")
+                bot.add_view(view, message_id=message.id)
+                return
+
+        # Если не найдено - отправляем новое сообщение
         await client_channel.send(
             "Нажмите кнопку ниже, чтобы получить роли:", view=view
         )
+        print("Отправлено новое сообщение с кнопкой")
     except Exception as e:
         print(f"Ошибка при отправке сообщения с кнопкой: {e}")
         traceback.print_exc()

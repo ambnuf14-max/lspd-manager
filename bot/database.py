@@ -56,9 +56,24 @@ async def setup_db(bot):
                 role_ids BIGINT[] NOT NULL,
                 created_by BIGINT NOT NULL,
                 created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-                description TEXT
+                description TEXT,
+                emoji TEXT
             )
         """
+        )
+        # Миграция: добавляем колонку emoji если её нет
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'role_presets' AND column_name = 'emoji'
+                ) THEN
+                    ALTER TABLE role_presets ADD COLUMN emoji TEXT;
+                END IF;
+            END $$;
+            """
         )
         await conn.execute(
             """

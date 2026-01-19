@@ -1,3 +1,4 @@
+import asyncio
 import traceback
 
 import gspread
@@ -12,174 +13,183 @@ from bot.config import (
     GSHEET_USERNAME_COLUMN,
     GSHEET_UPDATE_COLUMN
 )
+
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
 ]
 
 
-async def update_roles(bot):
-    try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_FILE, scope)
-        client = gspread.authorize(creds)
-        sheet = client.open(GOOGLE_SHEET_NAME).worksheet(GSHEET_WORKSHEET_NAME)
-        data = sheet.get_all_values()
+def _get_gsheet_client():
+    """Синхронная функция для получения клиента Google Sheets"""
+    creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_FILE, scope)
+    return gspread.authorize(creds)
 
+
+def _sync_update_roles(members_data: list[tuple[str, list[str]]]):
+    """
+    Синхронная функция для обновления ролей в Google Sheets.
+    members_data: список кортежей (discord_username, roles_list)
+    """
+    client = _get_gsheet_client()
+    sheet = client.open(GOOGLE_SHEET_NAME).worksheet(GSHEET_WORKSHEET_NAME)
+    data = sheet.get_all_values()
+
+    requests = []
+    for member_str, roles in members_data:
+        for i, row in enumerate(data):
+            discord_username = row[GSHEET_USERNAME_COLUMN]
+            if discord_username == member_str:
+                if roles:
+                    comment = "Роли:\n" + "\n".join(roles)
+                    requests.append(
+                        {
+                            "updateCells": {
+                                "range": {
+                                    "sheetId": sheet.id,
+                                    "startRowIndex": i,
+                                    "endRowIndex": i + 1,
+                                    "startColumnIndex": GSHEET_UPDATE_COLUMN,
+                                    "endColumnIndex": GSHEET_UPDATE_COLUMN + 1,
+                                },
+                                "rows": [
+                                    {
+                                        "values": [
+                                            {
+                                                "userEnteredValue": {
+                                                    "stringValue": "+"
+                                                },
+                                                "note": comment,
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "fields": "userEnteredValue,note",
+                            }
+                        }
+                    )
+                else:
+                    requests.append(
+                        {
+                            "updateCells": {
+                                "range": {
+                                    "sheetId": sheet.id,
+                                    "startRowIndex": i,
+                                    "endRowIndex": i + 1,
+                                    "startColumnIndex": GSHEET_UPDATE_COLUMN,
+                                    "endColumnIndex": GSHEET_UPDATE_COLUMN + 1,
+                                },
+                                "rows": [
+                                    {
+                                        "values": [
+                                            {
+                                                "userEnteredValue": {
+                                                    "stringValue": "-"
+                                                },
+                                                "note": "",
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "fields": "userEnteredValue,note",
+                            }
+                        }
+                    )
+
+    if requests:
+        sheet.spreadsheet.batch_update({"requests": requests})
+        return len(requests)
+    return 0
+
+
+def _sync_update_roles_comment(member_str: str, roles: list[str]):
+    """Синхронная функция для обновления комментария одного пользователя"""
+    client = _get_gsheet_client()
+    main_sheet = client.open(GOOGLE_SHEET_NAME).worksheet(GSHEET_WORKSHEET_NAME)
+    main_data = main_sheet.get_all_values()
+
+    for i, row in enumerate(main_data):
+        discord_username = row[GSHEET_USERNAME_COLUMN]
+        if discord_username == member_str:
+            if roles:
+                comment = "Роли:\n" + "\n".join(roles)
+                cell_value = "+"
+            else:
+                comment = ""
+                cell_value = "-"
+
+            requests = {
+                "updateCells": {
+                    "range": {
+                        "sheetId": main_sheet.id,
+                        "startRowIndex": i,
+                        "endRowIndex": i + 1,
+                        "startColumnIndex": GSHEET_UPDATE_COLUMN,
+                        "endColumnIndex": GSHEET_UPDATE_COLUMN + 1,
+                    },
+                    "rows": [
+                        {
+                            "values": [
+                                {
+                                    "userEnteredValue": {
+                                        "stringValue": cell_value
+                                    },
+                                    "note": comment,
+                                }
+                            ]
+                        }
+                    ],
+                    "fields": "userEnteredValue,note",
+                }
+            }
+            main_sheet.spreadsheet.batch_update({"requests": requests})
+            return True
+    return False
+
+
+async def update_roles(bot):
+    """Асинхронная функция для обновления ролей в Google Sheets"""
+    try:
         guild = bot.get_guild(config.GUILD.id)
         if guild is None:
             print(
                 f"Ошибка: гильдия с ID {config.GUILD} не найдена. Убедитесь, что бот находится на сервере."
             )
-        else:
-            print(f"Гильдия найдена: {guild.name} (ID: {guild.id})")
-        members = guild.members
-        requests = []
-        for member in members:
-            for i, row in enumerate(data):
-                discord_username = row[GSHEET_USERNAME_COLUMN]
-                if discord_username == str(member):
-                    roles = [
-                        role.name for role in member.roles if role.name != "@everyone"
-                    ]
-                    if roles:
-                        comment = "Роли:\n" + "\n".join(roles)
-                        requests.append(
-                            {
-                                "updateCells": {
-                                    "range": {
-                                        "sheetId": sheet.id,
-                                        "startRowIndex": i,  # Индексация с 0
-                                        "endRowIndex": i + 1,
-                                        "startColumnIndex": GSHEET_UPDATE_COLUMN,
-                                        "endColumnIndex": 14,
-                                    },
-                                    "rows": [
-                                        {
-                                            "values": [
-                                                {
-                                                    "userEnteredValue": {
-                                                        "stringValue": "+"
-                                                    },
-                                                    "note": comment,
-                                                }
-                                            ]
-                                        }
-                                    ],
-                                    "fields": "userEnteredValue,note",
-                                }
-                            }
-                        )
-                    else:
-                        cell_value = "-"
-                        requests.append(
-                            {
-                                "updateCells": {
-                                    "range": {
-                                        "sheetId": sheet.id,
-                                        "startRowIndex": i,  # Индексация с 0
-                                        "endRowIndex": i + 1,
-                                        "startColumnIndex": GSHEET_UPDATE_COLUMN,
-                                        "endColumnIndex": 14,
-                                    },
-                                    "rows": [
-                                        {
-                                            "values": [
-                                                {
-                                                    "userEnteredValue": {
-                                                        "stringValue": cell_value
-                                                    },
-                                                    "note": "",
-                                                }
-                                            ]
-                                        }
-                                    ],
-                                    "fields": "userEnteredValue,note",
-                                }
-                            }
-                        )
+            return
 
-        if requests:
-            sheet.spreadsheet.batch_update({"requests": requests})
-            print(f"Добавлено {len(requests)} комментариев.")
+        print(f"Гильдия найдена: {guild.name} (ID: {guild.id})")
+
+        # Подготовка данных в основном потоке
+        members_data = []
+        for member in guild.members:
+            roles = [role.name for role in member.roles if role.name != "@everyone"]
+            members_data.append((str(member), roles))
+
+        # Выполнение блокирующих операций в отдельном потоке
+        count = await asyncio.to_thread(_sync_update_roles, members_data)
+
+        if count:
+            print(f"Добавлено {count} комментариев.")
         else:
             print("Нет данных для обновления.")
 
     except Exception as e:
         print(f"Ошибка при парсинге пользователей: {e}")
         traceback.print_exc()
-        return
 
 
 async def update_roles_comment(member: Member):
+    """Асинхронная функция для обновления комментария одного пользователя"""
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_FILE, scope)
-        client = gspread.authorize(creds)
+        member_str = str(member)
+        roles = [role.name for role in member.roles if role.name != "@everyone"]
 
-        main_sheet = client.open(GOOGLE_SHEET_NAME).worksheet(GSHEET_WORKSHEET_NAME)
-        main_data = main_sheet.get_all_values()
+        # Выполнение блокирующих операций в отдельном потоке
+        success = await asyncio.to_thread(_sync_update_roles_comment, member_str, roles)
 
-        for i, row in enumerate(main_data):
-            discord_username = row[
-                20
-            ]  # Предположим, что никнейм Discord находится во 21 столбце (индекс 20)
-            if discord_username == str(member):
-                roles = [role.name for role in member.roles if role.name != "@everyone"]
-                if roles:
-                    comment = "Роли:\n" + "\n".join(roles)
-                    cell_value = "+"
-                    requests = {
-                        "updateCells": {
-                            "range": {
-                                "sheetId": main_sheet.id,
-                                "startRowIndex": i,  # Индексация с 0
-                                "endRowIndex": i + 1,
-                                "startColumnIndex": 13,  # Столбец N (индекс 13)
-                                "endColumnIndex": 14,
-                            },
-                            "rows": [
-                                {
-                                    "values": [
-                                        {
-                                            "userEnteredValue": {
-                                                "stringValue": cell_value
-                                            },
-                                            "note": comment,
-                                        }
-                                    ]
-                                }
-                            ],
-                            "fields": "userEnteredValue,note",
-                        }
-                    }
-                else:
-                    cell_value = "-"
-                    requests = {
-                        "updateCells": {
-                            "range": {
-                                "sheetId": main_sheet.id,
-                                "startRowIndex": i,  # Индексация с 0
-                                "endRowIndex": i + 1,
-                                "startColumnIndex": 13,  # Столбец N (индекс 13)
-                                "endColumnIndex": 14,
-                            },
-                            "rows": [
-                                {
-                                    "values": [
-                                        {
-                                            "userEnteredValue": {
-                                                "stringValue": cell_value
-                                            },
-                                            "note": "",
-                                        }
-                                    ]
-                                }
-                            ],
-                            "fields": "userEnteredValue,note",
-                        }
-                    }
-                main_sheet.spreadsheet.batch_update({"requests": requests})
-                print(f"Комментарий для {member.name} обновлен.")
-                # break
+        if success:
+            print(f"Комментарий для {member.name} обновлен.")
+
     except Exception as e:
         print(f"Ошибка при обновлении комментария для {member.name}: {e}")
         traceback.print_exc()
