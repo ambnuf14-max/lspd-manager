@@ -10,6 +10,7 @@ from discord.ext import commands
 
 from bot.config import PRESET_ADMIN_ROLE_ID
 from bot.logger import get_logger
+from models.roles_request import normalize_emoji_for_storage
 import json
 
 logger = get_logger('presets')
@@ -483,8 +484,9 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
                 )
                 return
 
-            # Валидация эмодзи
-            emoji_value = self.emoji.value.strip() if self.emoji.value else None
+            # Валидация и нормализация эмодзи
+            emoji_input = self.emoji.value.strip() if self.emoji.value else None
+            emoji_value = normalize_emoji_for_storage(emoji_input, self.guild) if emoji_input else None
 
             # Сохранение в БД
             async with self.bot.db_pool.acquire() as conn:

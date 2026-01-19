@@ -316,7 +316,12 @@ class PresetCategorySelect(discord.ui.Select):
                 original_view=self.view
             )
 
-            emoji_str = f"{preset['emoji']} " if preset.get('emoji') else ""
+            emoji = preset.get('emoji')
+            emoji_str = ""
+            if emoji:
+                parsed_emoji = parse_emoji(emoji, interaction.guild)
+                if parsed_emoji:
+                    emoji_str = f"{parsed_emoji} "
             await interaction.response.send_message(
                 f"**Выдать пресет {emoji_str}«{preset['name']}»?**\n\nРоли: {', '.join(role_names)}",
                 view=confirm_view,
@@ -553,7 +558,12 @@ class CategoryManagementSelect(discord.ui.Select):
             default_emoji = "📁"
 
             # Используем пользовательский эмодзи, если указан
-            emoji = cat.get('emoji') or default_emoji
+            emoji_str = cat.get('emoji')
+            emoji = default_emoji
+            if emoji_str:
+                parsed_emoji = parse_emoji(emoji_str)
+                if parsed_emoji:
+                    emoji = parsed_emoji
 
             if len(label) > 100:
                 label = label[:97] + "..."
@@ -598,7 +608,12 @@ class CategoryManagementSelect(discord.ui.Select):
         view = CategoryContentView(category, self.bot, self.parent_view, interaction.guild)
         await view.load_content()
 
-        emoji_str = category.get('emoji', '📁')
+        emoji = category.get('emoji')
+        emoji_str = '📁'
+        if emoji:
+            parsed_emoji = parse_emoji(emoji, interaction.guild)
+            if parsed_emoji:
+                emoji_str = str(parsed_emoji)
         embed = discord.Embed(
             title=f"{emoji_str} {category['name']}",
             description=f"Подкатегорий: {category.get('subcategory_count', 0)} | Пресетов: {category.get('preset_count', 0)}\n\n"
@@ -671,7 +686,12 @@ class CategoryContentSelect(discord.ui.Select):
 
         # Добавляем подкатегории
         for subcat in subcategories[:12]:
-            emoji = subcat.get('emoji') or "📂"
+            emoji_str = subcat.get('emoji')
+            emoji = "📂"
+            if emoji_str:
+                parsed_emoji = parse_emoji(emoji_str)
+                if parsed_emoji:
+                    emoji = parsed_emoji
             subcats = subcat.get('subcategory_count', 0)
             presets_count = subcat.get('preset_count', 0)
             options.append(discord.SelectOption(
@@ -683,7 +703,12 @@ class CategoryContentSelect(discord.ui.Select):
 
         # Добавляем пресеты
         for preset in presets[:12]:
-            emoji = preset.get('emoji') or "🎭"
+            emoji_str = preset.get('emoji')
+            emoji = "🎭"
+            if emoji_str:
+                parsed_emoji = parse_emoji(emoji_str)
+                if parsed_emoji:
+                    emoji = parsed_emoji
             options.append(discord.SelectOption(
                 label=preset['name'],
                 value=f"preset_{preset['preset_id']}",
@@ -726,7 +751,12 @@ class CategoryContentSelect(discord.ui.Select):
             view = CategoryContentView(subcat, self.bot, self.parent_view.parent_view, interaction.guild)
             await view.load_content()
 
-            emoji_str = subcat.get('emoji', '📂')
+            emoji = subcat.get('emoji')
+            emoji_str = '📂'
+            if emoji:
+                parsed_emoji = parse_emoji(emoji, interaction.guild)
+                if parsed_emoji:
+                    emoji_str = str(parsed_emoji)
             embed = discord.Embed(
                 title=f"{emoji_str} {subcat['name']}",
                 description=f"Подкатегорий: {subcat.get('subcategory_count', 0)} | Пресетов: {subcat.get('preset_count', 0)}\n\n"
@@ -753,7 +783,12 @@ class CategoryContentSelect(discord.ui.Select):
                 else:
                     role_names.append(f"❌ ID {role_id} (удалена)")
 
-            emoji_str = preset.get('emoji', '🎭')
+            emoji = preset.get('emoji')
+            emoji_str = '🎭'
+            if emoji:
+                parsed_emoji = parse_emoji(emoji, interaction.guild)
+                if parsed_emoji:
+                    emoji_str = str(parsed_emoji)
             embed = discord.Embed(
                 title=f"{emoji_str} {preset['name']}",
                 description="Выберите действие для редактирования пресета",
@@ -959,7 +994,9 @@ class CategoryCreateModal(discord.ui.Modal, title="Создать категор
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            emoji_value = self.emoji.value.strip() if self.emoji.value else None
+            emoji_input = self.emoji.value.strip() if self.emoji.value else None
+            # Нормализуем эмодзи для сохранения в БД
+            emoji_value = normalize_emoji_for_storage(emoji_input, interaction.guild) if emoji_input else None
 
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
@@ -972,13 +1009,23 @@ class CategoryCreateModal(discord.ui.Modal, title="Создать категор
 
             logger.info(f"Категория '{self.category_name.value}' создана пользователем {interaction.user.display_name}")
 
-            emoji_str = f"{emoji_value} " if emoji_value else ""
+            # Парсим эмодзи для отображения
+            emoji_str = ""
+            if emoji_value:
+                parsed_emoji = parse_emoji(emoji_value, interaction.guild)
+                if parsed_emoji:
+                    emoji_str = f"{parsed_emoji} "
 
             # Проверяем, является ли parent_view CategoryContentView
             if hasattr(self.parent_view, 'load_content'):
                 # Это CategoryContentView
                 await self.parent_view.load_content()
-                parent_emoji_str = self.parent_view.category.get('emoji', '📁')
+                parent_emoji = self.parent_view.category.get('emoji')
+                parent_emoji_str = '📁'
+                if parent_emoji:
+                    parsed_parent_emoji = parse_emoji(parent_emoji, interaction.guild)
+                    if parsed_parent_emoji:
+                        parent_emoji_str = str(parsed_parent_emoji)
                 embed = discord.Embed(
                     title=f"{parent_emoji_str} {self.parent_view.category['name']}",
                     description=f"Подкатегория {emoji_str}**«{self.category_name.value}»** создана!",
@@ -1078,7 +1125,9 @@ class CategoryRenameModal(discord.ui.Modal, title="Редактировать к
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            emoji_value = self.emoji.value.strip() if self.emoji.value else None
+            emoji_input = self.emoji.value.strip() if self.emoji.value else None
+            # Нормализуем эмодзи для сохранения в БД
+            emoji_value = normalize_emoji_for_storage(emoji_input, interaction.guild) if emoji_input else None
 
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
@@ -1088,7 +1137,12 @@ class CategoryRenameModal(discord.ui.Modal, title="Редактировать к
                     self.category['category_id']
                 )
 
-            emoji_str = f"{emoji_value} " if emoji_value else ""
+            # Парсим эмодзи для отображения
+            emoji_str = ""
+            if emoji_value:
+                parsed_emoji = parse_emoji(emoji_value, interaction.guild)
+                if parsed_emoji:
+                    emoji_str = f"{parsed_emoji} "
 
             # Проверяем, является ли parent_view CategoryContentView
             if hasattr(self.parent_view, 'load_content'):
@@ -1692,7 +1746,12 @@ class PresetManagementSelect(discord.ui.Select):
 
         # Остальные пресеты для редактирования
         for preset in presets[:24]:
-            emoji = parse_emoji(preset.get('emoji'), guild)
+            emoji_str = preset.get('emoji')
+            emoji = "🎭"
+            if emoji_str:
+                parsed_emoji = parse_emoji(emoji_str, guild)
+                if parsed_emoji:
+                    emoji = parsed_emoji
             description = preset.get('description') or f"Ролей: {len(preset['role_ids'])}"
             if len(description) > 100:
                 description = description[:97] + "..."
@@ -2285,8 +2344,9 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
                 )
                 return
 
-            # Валидация эмодзи
-            emoji_value = self.emoji.value.strip() if self.emoji.value else None
+            # Валидация и нормализация эмодзи
+            emoji_input = self.emoji.value.strip() if self.emoji.value else None
+            emoji_value = normalize_emoji_for_storage(emoji_input, self.guild) if emoji_input else None
 
             # Сохранение в БД с категорией
             async with self.bot.db_pool.acquire() as conn:
@@ -2314,7 +2374,12 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
                 if hasattr(self.parent_view, 'load_content'):
                     # Это CategoryContentView
                     await self.parent_view.load_content()
-                    emoji_str = self.parent_view.category.get('emoji', '📁')
+                    cat_emoji = self.parent_view.category.get('emoji')
+                    emoji_str = '📁'
+                    if cat_emoji:
+                        parsed_cat_emoji = parse_emoji(cat_emoji, interaction.guild)
+                        if parsed_cat_emoji:
+                            emoji_str = str(parsed_cat_emoji)
                     embed = discord.Embed(
                         title=f"{emoji_str} {self.parent_view.category['name']}",
                         description=f"Пресет **{self.preset_name.value}** создан!\nРоли: {role_list}",
@@ -2388,7 +2453,9 @@ class PresetEditInfoModal(discord.ui.Modal, title="Редактировать п
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            emoji_value = self.emoji.value.strip() if self.emoji.value else None
+            # Нормализуем эмодзи перед сохранением
+            emoji_input = self.emoji.value.strip() if self.emoji.value else None
+            emoji_value = normalize_emoji_for_storage(emoji_input, interaction.guild) if emoji_input else None
 
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
