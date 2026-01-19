@@ -103,6 +103,20 @@ async def setup_db(bot):
             END $$;
             """
         )
+        # Миграция: добавляем колонку rank_group_role_id в role_presets если её нет
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'role_presets' AND column_name = 'rank_group_role_id'
+                ) THEN
+                    ALTER TABLE role_presets ADD COLUMN rank_group_role_id BIGINT;
+                END IF;
+            END $$;
+            """
+        )
         # Миграция: добавляем колонку emoji в preset_categories если её нет
         await conn.execute(
             """

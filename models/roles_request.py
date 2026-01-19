@@ -281,7 +281,7 @@ class PresetCategorySelect(discord.ui.Select):
 
             async with self.bot.db_pool.acquire() as conn:
                 preset = await conn.fetchrow(
-                    "SELECT preset_id, name, role_ids, description, emoji, category_id FROM role_presets WHERE preset_id = $1",
+                    "SELECT preset_id, name, role_ids, description, emoji, category_id, rank_group_role_id FROM role_presets WHERE preset_id = $1",
                     preset_id
                 )
 
@@ -386,7 +386,7 @@ class ConfirmPresetView(discord.ui.View):
                         # Это корневая категория (отдел)
                         department_role_id = category['department_role_id']
 
-        # Формируем итоговый список ролей: Базовая роль LSPD + Роль отдела + Роли из пресета
+        # Формируем итоговый список ролей: Базовая роль LSPD + Роль отдела + Групповая роль + Роли из пресета
         all_role_ids = []
 
         # 1. Добавляем базовую роль LSPD
@@ -396,7 +396,11 @@ class ConfirmPresetView(discord.ui.View):
         if department_role_id:
             all_role_ids.append(department_role_id)
 
-        # 3. Добавляем роли из пресета (ранг)
+        # 3. Добавляем групповую роль ранга (если есть)
+        if self.preset.get('rank_group_role_id'):
+            all_role_ids.append(self.preset['rank_group_role_id'])
+
+        # 4. Добавляем роли из пресета (ранг)
         all_role_ids.extend(role_ids)
 
         # Выдача ролей
@@ -2404,6 +2408,13 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
         max_length=500
     )
 
+    rank_group_role_id_input = discord.ui.TextInput(
+        label="ID групповой роли (Officers/Detectives)",
+        placeholder="Опционально: ID роли для группы рангов",
+        required=False,
+        max_length=30
+    )
+
     def __init__(self, bot, guild, parent_view=None, category_id=None):
         super().__init__()
         self.bot = bot
@@ -2449,18 +2460,39 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет"):
             emoji_input = self.emoji.value.strip() if self.emoji.value else None
             emoji_value = normalize_emoji_for_storage(emoji_input, self.guild) if emoji_input else None
 
+            # Парсинг ID групповой роли
+            rank_group_role_id = None
+            if self.rank_group_role_id_input.value and self.rank_group_role_id_input.value.strip():
+                try:
+                    rank_group_role_id = int(self.rank_group_role_id_input.value.strip())
+                    # Проверяем существование роли
+                    role = self.guild.get_role(rank_group_role_id)
+                    if not role:
+                        await interaction.response.send_message(
+                            f"⚠️ Групповая роль с ID {rank_group_role_id} не найдена на сервере!",
+                            ephemeral=True
+                        )
+                        return
+                except ValueError:
+                    await interaction.response.send_message(
+                        "❌ Неверный формат ID групповой роли! Используйте только числа.",
+                        ephemeral=True
+                    )
+                    return
+
             # Сохранение в БД с категорией
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
-                    "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, emoji, category_id) "
-                    "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, emoji, category_id, rank_group_role_id) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                     self.preset_name.value,
                     role_ids,
                     interaction.user.id,
                     datetime.now(),
                     self.description.value if self.description.value else None,
                     emoji_value,
-                    self.category_id
+                    self.category_id,
+                    rank_group_role_id
                 )
 
             logger.info(
@@ -2548,9 +2580,19 @@ class PresetEditInfoModal(discord.ui.Modal, title="Редактировать п
             max_length=50
         )
 
+        rank_group_default = str(preset.get('rank_group_role_id', '')) if preset.get('rank_group_role_id') else ''
+        self.rank_group_role_id_input = discord.ui.TextInput(
+            label="ID групповой роли (Officers/Detectives)",
+            placeholder="Оставьте пустым чтобы убрать",
+            default=rank_group_default,
+            required=False,
+            max_length=30
+        )
+
         self.add_item(self.preset_name)
         self.add_item(self.description)
         self.add_item(self.emoji)
+        self.add_item(self.rank_group_role_id_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -2558,12 +2600,33 @@ class PresetEditInfoModal(discord.ui.Modal, title="Редактировать п
             emoji_input = self.emoji.value.strip() if self.emoji.value else None
             emoji_value = normalize_emoji_for_storage(emoji_input, interaction.guild) if emoji_input else None
 
+            # Парсинг ID групповой роли
+            rank_group_role_id = None
+            if self.rank_group_role_id_input.value and self.rank_group_role_id_input.value.strip():
+                try:
+                    rank_group_role_id = int(self.rank_group_role_id_input.value.strip())
+                    # Проверяем существование роли
+                    role = interaction.guild.get_role(rank_group_role_id)
+                    if not role:
+                        await interaction.response.send_message(
+                            f"⚠️ Групповая роль с ID {rank_group_role_id} не найдена на сервере!",
+                            ephemeral=True
+                        )
+                        return
+                except ValueError:
+                    await interaction.response.send_message(
+                        "❌ Неверный формат ID групповой роли! Используйте только числа.",
+                        ephemeral=True
+                    )
+                    return
+
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE role_presets SET name = $1, description = $2, emoji = $3 WHERE preset_id = $4",
+                    "UPDATE role_presets SET name = $1, description = $2, emoji = $3, rank_group_role_id = $4 WHERE preset_id = $5",
                     self.preset_name.value,
                     self.description.value if self.description.value else None,
                     emoji_value,
+                    rank_group_role_id,
                     self.preset['preset_id']
                 )
 

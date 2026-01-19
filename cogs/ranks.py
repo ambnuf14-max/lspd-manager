@@ -34,6 +34,29 @@ LSPD_RANKS = [
     "Recruit Officer"
 ]
 
+# Маппинг рангов на групповые роли
+RANK_TO_GROUP_ROLE = {
+    "Chief of Police": "Staff Officers",
+    "Assistant Chief of Police": "Staff Officers",
+    "Deputy Chief of Police": "Staff Officers",
+    "Police Commander": "Command Officers",
+    "Police Captain III": "Command Officers",
+    "Police Captain II": "Command Officers",
+    "Police Captain I": "Command Officers",
+    "Police Lieutenant II": "Police Supervisors",
+    "Police Lieutenant I": "Police Supervisors",
+    "Police Sergeant II": "Police Supervisors",
+    "Police Sergeant I": "Police Supervisors",
+    "Police Detective III": "Police Detectives",
+    "Police Detective II": "Police Detectives",
+    "Police Detective I": "Police Detectives",
+    "Police Officer III+1": "Police Officers",
+    "Police Officer III": "Police Officers",
+    "Police Officer II": "Police Officers",
+    "Police Officer I": "Police Officers",
+    "Recruit Officer": None  # Нет групповой роли
+}
+
 
 class RanksUtility(commands.Cog):
     """Утилиты для работы с рангами LSPD"""
@@ -116,6 +139,19 @@ class RanksUtility(commands.Cog):
                     logger.warning(f"Роль '{rank_name}' не найдена на сервере")
                     continue
 
+                # Определяем групповую роль для ранга
+                group_role_name = RANK_TO_GROUP_ROLE.get(rank_name)
+                group_role_id = None
+
+                if group_role_name:
+                    # Ищем групповую роль на сервере
+                    group_role = discord.utils.get(interaction.guild.roles, name=group_role_name)
+                    if group_role:
+                        group_role_id = group_role.id
+                        logger.info(f"Для ранга '{rank_name}' найдена групповая роль '{group_role_name}' (ID: {group_role_id})")
+                    else:
+                        logger.warning(f"Групповая роль '{group_role_name}' для ранга '{rank_name}' не найдена на сервере")
+
                 # Создаём пресет для ранга
                 async with self.bot.db_pool.acquire() as conn:
                     # Проверяем, существует ли уже пресет с таким названием
@@ -131,14 +167,15 @@ class RanksUtility(commands.Cog):
 
                     # Создаём пресет
                     await conn.execute(
-                        "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, category_id) "
-                        "VALUES ($1, $2, $3, $4, $5, $6)",
+                        "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, category_id, rank_group_role_id) "
+                        "VALUES ($1, $2, $3, $4, $5, $6, $7)",
                         rank_name,
                         [role.id],
                         interaction.user.id,
                         datetime.now(),
                         f"Ранг LSPD: {rank_name}",
-                        category_id
+                        category_id,
+                        group_role_id
                     )
 
                 created_ranks.append(rank_name)
