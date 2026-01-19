@@ -317,12 +317,8 @@ class PresetManagementView(discord.ui.View):
         # Очищаем и добавляем компоненты
         self.clear_items()
 
-        # Кнопка создания пресета
-        self.add_item(CreatePresetButton(self.bot, self.guild, self))
-
-        # Select для редактирования/удаления если есть пресеты
-        if self.presets:
-            self.add_item(PresetManagementSelect(self.presets, self.bot, self.guild, self))
+        # Select для управления пресетами (включая опцию создания)
+        self.add_item(PresetManagementSelect(self.presets, self.bot, self.guild, self))
 
     @discord.ui.button(label="Обновить список", style=discord.ButtonStyle.gray, emoji="🔄", row=2)
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -330,27 +326,8 @@ class PresetManagementView(discord.ui.View):
         await interaction.response.edit_message(view=self)
 
 
-class CreatePresetButton(discord.ui.Button):
-    """Кнопка создания нового пресета"""
-
-    def __init__(self, bot, guild, parent_view):
-        super().__init__(
-            label="Создать пресет",
-            style=discord.ButtonStyle.green,
-            emoji="➕",
-            row=0
-        )
-        self.bot = bot
-        self.guild = guild
-        self.parent_view = parent_view
-
-    async def callback(self, interaction: discord.Interaction):
-        modal = PresetCreateModal(self.bot, self.guild, self.parent_view)
-        await interaction.response.send_modal(modal)
-
-
 class PresetManagementSelect(discord.ui.Select):
-    """Select для выбора пресета для редактирования/удаления"""
+    """Select для управления пресетами (создание/редактирование)"""
 
     def __init__(self, presets: list, bot, guild, parent_view):
         self.presets_data = {str(p['preset_id']): p for p in presets}
@@ -358,8 +335,18 @@ class PresetManagementSelect(discord.ui.Select):
         self.guild = guild
         self.parent_view = parent_view
 
-        options = []
-        for preset in presets[:25]:
+        # Первая опция - создать пресет
+        options = [
+            discord.SelectOption(
+                label="Создать пресет",
+                value="create_preset",
+                emoji="➕",
+                description="Создать новый пресет ролей"
+            )
+        ]
+
+        # Остальные пресеты для редактирования
+        for preset in presets[:24]:
             emoji = preset.get('emoji')
             description = preset.get('description') or f"Ролей: {len(preset['role_ids'])}"
             if len(description) > 100:
@@ -373,14 +360,21 @@ class PresetManagementSelect(discord.ui.Select):
             ))
 
         super().__init__(
-            placeholder="Выберите пресет для редактирования...",
+            placeholder="Выберите действие или пресет...",
             options=options,
-            row=1
+            row=0
         )
 
     async def callback(self, interaction: discord.Interaction):
-        preset_id = self.values[0]
-        preset = self.presets_data.get(preset_id)
+        selected_value = self.values[0]
+
+        # Создание нового пресета
+        if selected_value == "create_preset":
+            modal = PresetCreateModal(self.bot, self.guild, self.parent_view)
+            await interaction.response.send_modal(modal)
+            return
+
+        preset = self.presets_data.get(selected_value)
 
         if not preset:
             await interaction.response.send_message("Пресет не найден.", ephemeral=True)
