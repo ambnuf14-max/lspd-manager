@@ -95,10 +95,25 @@ async def setup_db(bot):
             CREATE TABLE IF NOT EXISTS reject_reasons (
                 reason_id SERIAL PRIMARY KEY,
                 reason_text TEXT NOT NULL,
+                dm_template TEXT,
                 created_by BIGINT NOT NULL,
                 created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
             )
         """
+        )
+        # Миграция: добавляем колонку dm_template если её нет
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'reject_reasons' AND column_name = 'dm_template'
+                ) THEN
+                    ALTER TABLE reject_reasons ADD COLUMN dm_template TEXT;
+                END IF;
+            END $$;
+            """
         )
         # Добавляем стандартные причины если таблица пустая
         existing_reasons = await conn.fetchval("SELECT COUNT(*) FROM reject_reasons")
