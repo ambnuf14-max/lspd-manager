@@ -27,27 +27,38 @@ def parse_emoji(emoji_str: str, guild: discord.Guild = None) -> discord.PartialE
 
     emoji_str = emoji_str.strip()
 
-    # Проверяем полный формат кастомного эмодзи <:name:id> или <a:name:id>
-    custom_match = re.match(r'<(a)?:(\w+):(\d+)>', emoji_str)
-    if custom_match:
-        animated = custom_match.group(1) == 'a'
-        name = custom_match.group(2)
-        emoji_id = int(custom_match.group(3))
-        return discord.PartialEmoji(name=name, id=emoji_id, animated=animated)
+    if not emoji_str:
+        return None
 
-    # Проверяем только ID (число)
-    if emoji_str.isdigit():
-        emoji_id = int(emoji_str)
-        # Пытаемся найти эмодзи на сервере для получения имени
-        if guild:
-            emoji = discord.utils.get(guild.emojis, id=emoji_id)
-            if emoji:
-                return discord.PartialEmoji(name=emoji.name, id=emoji.id, animated=emoji.animated)
-        # Если не нашли на сервере, создаём с placeholder именем
-        return discord.PartialEmoji(name='emoji', id=emoji_id)
+    try:
+        # Проверяем полный формат кастомного эмодзи <:name:id> или <a:name:id>
+        custom_match = re.match(r'<(a)?:(\w+):(\d+)>', emoji_str)
+        if custom_match:
+            animated = custom_match.group(1) == 'a'
+            name = custom_match.group(2)
+            emoji_id = int(custom_match.group(3))
+            return discord.PartialEmoji(name=name, id=emoji_id, animated=animated)
 
-    # Иначе считаем что это Unicode эмодзи
-    return emoji_str
+        # Проверяем только ID (число)
+        if emoji_str.isdigit():
+            emoji_id = int(emoji_str)
+            # Пытаемся найти эмодзи на сервере для получения имени
+            if guild:
+                emoji = discord.utils.get(guild.emojis, id=emoji_id)
+                if emoji:
+                    return discord.PartialEmoji(name=emoji.name, id=emoji.id, animated=emoji.animated)
+            # Если не нашли на сервере - возвращаем None (невалидный ID)
+            return None
+
+        # Проверяем что это похоже на Unicode эмодзи (1-4 символа, не ASCII)
+        if len(emoji_str) <= 4 and not emoji_str.isascii():
+            return emoji_str
+
+        # Невалидный формат
+        return None
+
+    except Exception:
+        return None
 
 
 # ============== ПРОВЕРКА ПРАВ ==============
