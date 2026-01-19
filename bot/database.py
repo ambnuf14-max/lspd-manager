@@ -117,6 +117,20 @@ async def setup_db(bot):
             END $$;
             """
         )
+        # Миграция: добавляем колонку sort_order в role_presets если её нет
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'role_presets' AND column_name = 'sort_order'
+                ) THEN
+                    ALTER TABLE role_presets ADD COLUMN sort_order INT;
+                END IF;
+            END $$;
+            """
+        )
         # Миграция: добавляем колонку emoji в preset_categories если её нет
         await conn.execute(
             """

@@ -81,7 +81,7 @@ class PresetsV2(commands.Cog):
         try:
             async with self.bot.db_pool.acquire() as conn:
                 presets = await conn.fetch(
-                    "SELECT preset_id, name, role_ids, created_by, created_at FROM role_presets ORDER BY name"
+                    "SELECT preset_id, name, role_ids, created_by, created_at FROM role_presets ORDER BY sort_order NULLS LAST, name"
                 )
 
             if not presets:

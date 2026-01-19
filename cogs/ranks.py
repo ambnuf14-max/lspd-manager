@@ -220,17 +220,18 @@ class RanksUtility(commands.Cog):
                         logger.info(f"Пресет для '{rank_name}' уже существует, пропускаем")
                         continue
 
-                    # Создаём пресет
+                    # Создаём пресет с порядком сортировки (i = индекс в списке LSPD_RANKS)
                     await conn.execute(
-                        "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, category_id, rank_group_role_id) "
-                        "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                        "INSERT INTO role_presets (name, role_ids, created_by, created_at, description, category_id, rank_group_role_id, sort_order) "
+                        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                         rank_name,
                         [role.id],
                         interaction.user.id,
                         datetime.now(),
                         f"Ранг LSPD: {rank_name}",
                         category_id,
-                        group_role_id
+                        group_role_id,
+                        i  # Порядок сортировки = индекс в списке
                     )
 
                 created_ranks.append(rank_name)

@@ -180,7 +180,7 @@ class PresetCategorySelect(discord.ui.Select):
                     "SELECT category_id, name FROM preset_categories WHERE parent_id IS NULL ORDER BY name"
                 )
                 uncategorized = await conn.fetch(
-                    "SELECT preset_id, name, description, emoji FROM role_presets WHERE category_id IS NULL ORDER BY name"
+                    "SELECT preset_id, name, description, emoji FROM role_presets WHERE category_id IS NULL ORDER BY sort_order NULLS LAST, name"
                 )
             else:
                 # Уровень подкатегорий: подкатегории + пресеты этой категории
@@ -189,7 +189,7 @@ class PresetCategorySelect(discord.ui.Select):
                     self.parent_category_id
                 )
                 uncategorized = await conn.fetch(
-                    "SELECT preset_id, name, description, emoji FROM role_presets WHERE category_id = $1 ORDER BY name",
+                    "SELECT preset_id, name, description, emoji FROM role_presets WHERE category_id = $1 ORDER BY sort_order NULLS LAST, name",
                     self.parent_category_id
                 )
 
@@ -839,7 +839,7 @@ class CategoryContentView(discord.ui.View):
                 SELECT preset_id, name, emoji, role_ids
                 FROM role_presets
                 WHERE category_id = $1
-                ORDER BY name
+                ORDER BY sort_order NULLS LAST, name
                 """,
                 self.category['category_id']
             )
@@ -1636,7 +1636,7 @@ class PresetManagementView(discord.ui.View):
                        c.name as category_name
                 FROM role_presets p
                 LEFT JOIN preset_categories c ON p.category_id = c.category_id
-                ORDER BY p.name
+                ORDER BY p.sort_order NULLS LAST, p.name
                 """
             )
 
