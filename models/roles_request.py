@@ -216,10 +216,20 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Защита от спама: кулдаун 10 минут между запросами (не для админов)
-        is_admin = interaction.user.guild_permissions.administrator
+        # Защита от спама: кулдаун 10 минут между запросами (не для админов/preset_admin)
+        from bot.config import PRESET_ADMIN_ROLE_ID
 
-        if not is_admin:
+        is_admin = interaction.user.guild_permissions.administrator
+        has_preset_role = False
+
+        if PRESET_ADMIN_ROLE_ID:
+            try:
+                preset_role = interaction.guild.get_role(int(PRESET_ADMIN_ROLE_ID))
+                has_preset_role = preset_role and preset_role in interaction.user.roles
+            except (ValueError, TypeError):
+                pass
+
+        if not is_admin and not has_preset_role:
             async with interaction.client.db_pool.acquire() as conn:
                 last_request = await conn.fetchrow(
                     "SELECT created_at FROM requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
