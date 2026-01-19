@@ -242,14 +242,14 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
     )
 
     feedback = discord.ui.TextInput(
-        label="Укажите необходимые роли:",
+        label="Запрашиваемые роли:",
         style=discord.TextStyle.long,
         required=True,
         max_length=300,
     )
 
     forum = discord.ui.TextInput(
-        label="Форумник sa-es.su:",
+        label="Форумный аккаунт (pd.ls-es.su):",
         style=discord.TextStyle.short,
         placeholder="Проверьте, указан ли в профиле дискорд.",
         required=True,
@@ -305,14 +305,16 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
 
         # Дата захода на сервер
         joined_at = member.joined_at.strftime("%d.%m.%Y %H:%M") if member and member.joined_at else "Неизвестно"
+        # Дата регистрации Discord
+        created_at = self.user.created_at.strftime("%d.%m.%Y") if self.user.created_at else "Неизвестно"
 
         embed = discord.Embed(
-            title="Новый запрос",
-            description=f"**От {self.user.mention}**\n\n"
+            title="📋 Запрос ролей",
+            description=f"**От {self.user.mention} (ID: {self.user.id})**\n\n"
             f"**{self.feedback.label}**\n"
-            f"{self.feedback.value}\n"
+            f"{self.feedback.value}\n\n"
             f"**{self.forum.label}**\n"
-            f"{self.forum.value}\n"
+            f"{self.forum.value}\n\n"
             f"**{self.vk.label}**\n"
             f"{self.vk.value}",
             color=discord.Color.yellow(),
@@ -325,8 +327,8 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
             url=f"https://discord.com/users/{self.user.id}",
         )
 
-        embed.add_field(name="🆔 User ID", value=str(self.user.id), inline=True)
         embed.add_field(name="📅 На сервере с", value=joined_at, inline=True)
+        embed.add_field(name="Аккаунт создан", value=created_at, inline=True)
         embed.add_field(name="🎭 Текущие роли", value=roles_text[:1024], inline=False)
 
         view = PersistentView(embed, self.user, self.bot)
