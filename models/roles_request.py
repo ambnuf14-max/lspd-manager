@@ -180,6 +180,10 @@ class PresetCategorySelect(discord.ui.Select):
 
     async def load_options(self):
         """Асинхронная загрузка опций"""
+        # Сохраняем информацию о текущей категории для placeholder
+        self.current_category_name = None
+        self.current_parent_name = None
+
         async with self.bot.db_pool.acquire() as conn:
             if self.parent_category_id is None:
                 # Корневой уровень: категории + пресеты без категории
@@ -190,6 +194,20 @@ class PresetCategorySelect(discord.ui.Select):
                     "SELECT preset_id, name, description, emoji FROM role_presets WHERE category_id IS NULL ORDER BY sort_order NULLS LAST, name"
                 )
             else:
+                # Загружаем информацию о текущей категории для placeholder
+                current_cat = await conn.fetchrow(
+                    """
+                    SELECT c.name, p.name as parent_name
+                    FROM preset_categories c
+                    LEFT JOIN preset_categories p ON c.parent_id = p.category_id
+                    WHERE c.category_id = $1
+                    """,
+                    self.parent_category_id
+                )
+                if current_cat:
+                    self.current_category_name = current_cat['name']
+                    self.current_parent_name = current_cat['parent_name']
+
                 # Уровень подкатегорий: подкатегории + пресеты этой категории
                 categories = await conn.fetch(
                     "SELECT category_id, name, emoji FROM preset_categories WHERE parent_id = $1 ORDER BY name",
@@ -267,11 +285,30 @@ class PresetCategorySelect(discord.ui.Select):
         total_presets = len(uncategorized)
         self.total_pages = (total_presets + max_options - 1) // max_options if total_presets > 0 else 1
 
-        # Обновляем placeholder с информацией о странице
-        if self.total_pages > 1:
-            self.placeholder = f"Выберите категорию или пресет... (Стр. {self.page + 1}/{self.total_pages})"
+        # Формируем placeholder с путем к текущей категории
+        if self.current_category_name:
+            # Показываем путь к категории
+            if self.current_parent_name:
+                # Подкатегория - показываем: родитель -> категория
+                category_path = f"{self.current_parent_name} → {self.current_category_name}"
+            else:
+                # Корневая категория
+                category_path = self.current_category_name
+
+            if self.total_pages > 1:
+                self.placeholder = f"{category_path} (Стр. {self.page + 1}/{self.total_pages})"
+            else:
+                self.placeholder = category_path
         else:
-            self.placeholder = "Выберите категорию или пресет..."
+            # Корневой уровень - стандартный placeholder
+            if self.total_pages > 1:
+                self.placeholder = f"Выберите категорию или пресет... (Стр. {self.page + 1}/{self.total_pages})"
+            else:
+                self.placeholder = "Выберите категорию или пресет..."
+
+        # Ограничиваем длину placeholder (Discord лимит 150 символов)
+        if len(self.placeholder) > 150:
+            self.placeholder = self.placeholder[:147] + "..."
 
     async def callback(self, interaction: discord.Interaction):
         selected_value = self.values[0]
