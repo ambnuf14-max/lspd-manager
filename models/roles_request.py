@@ -135,6 +135,7 @@ class PersistentView(discord.ui.View):
         # Основные кнопки (row=0)
         self.add_item(DoneButton(embed, user))
         self.add_item(DropButton(embed, user, bot))
+        self.add_item(ChangeNicknameButton(embed, user, bot))
         self.add_item(SettingsButton(embed, user, bot))
 
     async def load_presets(self):
@@ -3290,6 +3291,7 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
         embed.add_field(name=self.ooc_nickname.label, value=self.ooc_nickname.value, inline=True)
         embed.add_field(name=f"🔗 {self.forum.label}", value=self.forum.value, inline=False)
         embed.add_field(name=self.feedback.label, value=self.feedback.value, inline=False)
+        embed.add_field(name="📝 Статус никнейма", value="Не изменялся", inline=False)
         embed.add_field(name="🚪 На сервере с", value=joined_at, inline=True)
         embed.add_field(name="📅 Аккаунт создан", value=created_at, inline=True)
         embed.add_field(name="Текущие роли", value=roles_text[:1024], inline=False)
@@ -3562,6 +3564,121 @@ class DropButton(discord.ui.Button):
             "**Выберите причину отказа:**",
             view=reject_view,
             ephemeral=True
+        )
+
+
+class ChangeNicknameButton(discord.ui.Button):
+    def __init__(self, embed: discord.Embed, user: discord.User, bot=None):
+        super().__init__(
+            label="Изменить никнейм",
+            style=discord.ButtonStyle.blurple,
+            custom_id="change_nickname_button",
+            row=0
+        )
+        self.embed = embed
+        self.user = user
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        # Получаем никнеймы из полей embed
+        ic_nickname = None
+        ooc_nickname = None
+
+        for field in self.embed.fields:
+            if field.name == "Игровой никнейм персонажа":
+                ic_nickname = field.value
+            elif field.name == "Ваш OOC никнейм":
+                ooc_nickname = field.value
+
+        if not ic_nickname or not ooc_nickname:
+            await interaction.response.send_message(
+                "Не удалось получить никнеймы из заявки.",
+                ephemeral=True
+            )
+            return
+
+        # Формируем новый никнейм
+        new_nickname = f"{ic_nickname} ({ooc_nickname})"
+
+        # Получаем текущий никнейм пользователя на сервере
+        member = interaction.guild.get_member(self.user.id)
+        if not member:
+            await interaction.response.send_message(
+                "Пользователь не найден на сервере.",
+                ephemeral=True
+            )
+            return
+
+        current_nickname = member.display_name
+
+        # Создаем view с подтверждением
+        confirm_view = ConfirmNicknameChangeView(
+            embed=self.embed,
+            user=self.user,
+            member=member,
+            new_nickname=new_nickname,
+            original_message=interaction.message
+        )
+
+        await interaction.response.send_message(
+            f"**Изменение никнейма**\n\n"
+            f"Текущий никнейм: `{current_nickname}`\n"
+            f"Новый никнейм: `{new_nickname}`\n\n"
+            f"Подтвердите изменение:",
+            view=confirm_view,
+            ephemeral=True
+        )
+
+
+class ConfirmNicknameChangeView(discord.ui.View):
+    def __init__(self, embed: discord.Embed, user: discord.User, member: discord.Member, new_nickname: str, original_message: discord.Message):
+        super().__init__(timeout=180)
+        self.embed = embed
+        self.user = user
+        self.member = member
+        self.new_nickname = new_nickname
+        self.original_message = original_message
+
+    @discord.ui.button(label="Да", style=discord.ButtonStyle.green)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            # Изменяем никнейм на сервере
+            await self.member.edit(nick=self.new_nickname)
+
+            # Обновляем поле "Статус никнейма" в embed
+            for i, field in enumerate(self.embed.fields):
+                if field.name == "📝 Статус никнейма":
+                    self.embed.set_field_at(
+                        i,
+                        name="📝 Статус никнейма",
+                        value="Был изменен администратором",
+                        inline=False
+                    )
+                    break
+
+            # Обновляем сообщение с новым embed
+            await self.original_message.edit(embed=self.embed)
+
+            await interaction.response.edit_message(
+                content=f"✅ Никнейм успешно изменен на `{self.new_nickname}`",
+                view=None
+            )
+        except discord.Forbidden:
+            await interaction.response.edit_message(
+                content="❌ Недостаточно прав для изменения никнейма этого пользователя.",
+                view=None
+            )
+        except Exception as e:
+            await interaction.response.edit_message(
+                content=f"❌ Ошибка при изменении никнейма: {e}",
+                view=None
+            )
+
+    @discord.ui.button(label="Нет", style=discord.ButtonStyle.red)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(
+            content="Изменение никнейма отменено.",
+            view=None
         )
 
 
