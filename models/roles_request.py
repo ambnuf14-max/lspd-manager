@@ -3328,6 +3328,23 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
 
 # ============== ВЫБОР ПРИЧИНЫ ОТКАЗА ==============
 
+class BackFromRejectButton(discord.ui.Button):
+    """Кнопка возврата из режима выбора причины отказа"""
+
+    def __init__(self, original_view):
+        super().__init__(
+            label="Назад",
+            style=discord.ButtonStyle.gray,
+            custom_id="back_from_reject_button",
+            row=1
+        )
+        self.original_view = original_view
+
+    async def callback(self, interaction: discord.Interaction):
+        # Возвращаем исходный view
+        await interaction.response.edit_message(view=self.original_view)
+
+
 class RejectReasonView(discord.ui.View):
     """View для выбора причины отказа"""
 
@@ -3353,6 +3370,11 @@ class RejectReasonView(discord.ui.View):
                 user=self.user,
                 bot=self.bot,
                 original_message=self.original_message,
+                original_view=self.original_view
+            ))
+
+            # Добавляем кнопку "Назад"
+            self.add_item(BackFromRejectButton(
                 original_view=self.original_view
             ))
         except Exception as e:
@@ -3436,9 +3458,9 @@ class RejectReasonSelect(discord.ui.Select):
                 self.original_message.id,
             )
 
-        await interaction.response.edit_message(
-            content=f"Запрос от {self.user.display_name} отклонён!\nПричина: {reason}",
-            view=None
+        await interaction.response.send_message(
+            f"Запрос от {self.user.display_name} отклонён!\nПричина: {reason}",
+            ephemeral=True
         )
 
         # Используем кастомный текст ЛС если задан, иначе стандартный
@@ -3549,7 +3571,7 @@ class DropButton(discord.ui.Button):
         self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
-        # Показываем ephemeral сообщение с выбором причины
+        # Переключаем view на выбор причины отказа
         bot = self.bot or interaction.client
         reject_view = RejectReasonView(
             embed=self.embed,
@@ -3560,10 +3582,8 @@ class DropButton(discord.ui.Button):
         )
         await reject_view.load_reasons()
 
-        await interaction.response.send_message(
-            "**Выберите причину отказа:**",
-            view=reject_view,
-            ephemeral=True
+        await interaction.response.edit_message(
+            view=reject_view
         )
 
 
