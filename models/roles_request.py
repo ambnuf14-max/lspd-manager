@@ -401,9 +401,50 @@ class PresetCategorySelect(discord.ui.Select):
                 )
                 return
 
-            # Получаем названия ролей
+            # Собираем все роли, которые будут выданы
+            all_role_ids = list(preset['role_ids'])  # Роли из пресета
+
+            # Добавляем групповую роль ранга
+            if preset.get('rank_group_role_id'):
+                all_role_ids.append(preset['rank_group_role_id'])
+
+            # Получаем роль отдела из категории
+            department_role_id = None
+            if preset.get('category_id'):
+                async with self.bot.db_pool.acquire() as conn:
+                    category = await conn.fetchrow(
+                        "SELECT parent_id, department_role_id FROM preset_categories WHERE category_id = $1",
+                        preset['category_id']
+                    )
+
+                    if category:
+                        if category['parent_id'] is not None:
+                            # Это подкатегория, получаем department_role_id родителя
+                            parent = await conn.fetchrow(
+                                "SELECT department_role_id FROM preset_categories WHERE category_id = $1",
+                                category['parent_id']
+                            )
+                            if parent and parent['department_role_id']:
+                                department_role_id = parent['department_role_id']
+                        else:
+                            # Это корневая категория
+                            department_role_id = category['department_role_id']
+
+            # Добавляем роль отдела
+            if department_role_id:
+                all_role_ids.append(department_role_id)
+
+            # Удаляем дубликаты, сохраняя порядок
+            seen = set()
+            unique_role_ids = []
+            for role_id in all_role_ids:
+                if role_id not in seen:
+                    seen.add(role_id)
+                    unique_role_ids.append(role_id)
+
+            # Получаем названия всех ролей
             role_names = []
-            for role_id in preset['role_ids']:
+            for role_id in unique_role_ids:
                 role = guild.get_role(role_id)
                 if role:
                     role_names.append(role.name)
@@ -419,14 +460,12 @@ class PresetCategorySelect(discord.ui.Select):
                 original_view=self.view
             )
 
-            emoji = preset.get('emoji')
-            emoji_str = ""
-            if emoji:
-                parsed_emoji = parse_emoji(emoji, interaction.guild)
-                if parsed_emoji:
-                    emoji_str = f"{parsed_emoji} "
+            # Формируем сообщение со списком ролей
+            roles_list = '\n'.join(f"• {role_name}" for role_name in role_names)
+            message = f"Игроку будут выданы роли:\n\n{roles_list}"
+
             await interaction.response.send_message(
-                f"**Выдать пресет {emoji_str}«{preset['name']}»?**\n\nРоли: {', '.join(role_names)}",
+                message,
                 view=confirm_view,
                 ephemeral=True
             )
@@ -530,7 +569,7 @@ class ConfirmPresetView(discord.ui.View):
         self.original_message = original_message
         self.original_view = original_view
 
-    @discord.ui.button(label="Да", style=discord.ButtonStyle.green, emoji="✅")
+    @discord.ui.button(label="Да", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Подтверждение применения пресета"""
         from bot.config import BASE_LSPD_ROLE_ID
@@ -651,7 +690,7 @@ class ConfirmPresetView(discord.ui.View):
 
         await interaction.response.edit_message(content=response_msg, view=None)
 
-    @discord.ui.button(label="Нет", style=discord.ButtonStyle.red, emoji="✖")
+    @discord.ui.button(label="Нет", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Отмена применения пресета"""
         await interaction.response.edit_message(content="Отменено.", view=None)
