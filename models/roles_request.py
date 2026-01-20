@@ -3276,10 +3276,6 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
         embed = discord.Embed(
             title="Новый запрос ролей",
             description=f"**От {self.user.mention} (ID: {self.user.id})**\n\n"
-            f"**{self.ic_nickname.label}**\n"
-            f"{self.ic_nickname.value}\n\n"
-            f"**{self.ooc_nickname.label}**\n"
-            f"{self.ooc_nickname.value}\n\n"
             f"**{self.feedback.label}**\n"
             f"{self.feedback.value}\n\n"
             f"**{self.forum.label}**\n"
@@ -3294,6 +3290,8 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
             url=f"https://discord.com/users/{self.user.id}",
         )
 
+        embed.add_field(name=self.ic_nickname.label, value=self.ic_nickname.value, inline=True)
+        embed.add_field(name=self.ooc_nickname.label, value=self.ooc_nickname.value, inline=True)
         embed.add_field(name="На сервере с", value=joined_at, inline=True)
         embed.add_field(name="Аккаунт создан", value=created_at, inline=True)
         embed.add_field(name="Текущие роли", value=roles_text[:1024], inline=False)
