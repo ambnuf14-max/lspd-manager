@@ -404,20 +404,12 @@ class PresetCategorySelect(discord.ui.Select):
             # Импортируем базовую роль LSPD
             from bot.config import BASE_LSPD_ROLE_ID
 
-            # Собираем все роли, которые будут выданы
+            # Собираем все роли, которые будут выданы (в порядке иерархии)
             all_role_ids = list(preset['role_ids'])  # Роли из пресета
 
             # Добавляем групповую роль ранга
             if preset.get('rank_group_role_id'):
                 all_role_ids.append(preset['rank_group_role_id'])
-
-            # Добавляем основную роль LSPD
-            if BASE_LSPD_ROLE_ID:
-                try:
-                    base_role_id = int(BASE_LSPD_ROLE_ID)
-                    all_role_ids.append(base_role_id)
-                except (ValueError, TypeError):
-                    pass
 
             # Получаем роль отдела из категории
             department_role_id = None
@@ -444,6 +436,14 @@ class PresetCategorySelect(discord.ui.Select):
             # Добавляем роль отдела
             if department_role_id:
                 all_role_ids.append(department_role_id)
+
+            # Добавляем основную роль LSPD в самый конец (она самая низкая в иерархии)
+            if BASE_LSPD_ROLE_ID:
+                try:
+                    base_role_id = int(BASE_LSPD_ROLE_ID)
+                    all_role_ids.append(base_role_id)
+                except (ValueError, TypeError):
+                    pass
 
             # Удаляем дубликаты, сохраняя порядок
             seen = set()
