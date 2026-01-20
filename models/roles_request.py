@@ -302,9 +302,9 @@ class PresetCategorySelect(discord.ui.Select):
         else:
             # Корневой уровень - стандартный placeholder
             if self.total_pages > 1:
-                self.placeholder = f"Выберите категорию или пресет... (Стр. {self.page + 1}/{self.total_pages})"
+                self.placeholder = f"Выберите роли для назначения... (Стр. {self.page + 1}/{self.total_pages})"
             else:
-                self.placeholder = "Выберите категорию или пресет..."
+                self.placeholder = "Выберите роли для назначения..."
 
         # Ограничиваем длину placeholder (Discord лимит 150 символов)
         if len(self.placeholder) > 150:
@@ -3194,18 +3194,26 @@ class PresetEditInfoModal(discord.ui.Modal, title="Редактировать п
 
 # ============== ФОРМА ЗАПРОСА РОЛЕЙ ==============
 
-class FeedbackModal(discord.ui.Modal, title="Получение роли"):
+class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = None
         self.bot = None
 
-    info = discord.ui.TextInput(
-        label="Важно",
-        default="Никнейм на сервере должен быть в формате: Name Surname (OOC Nick)",
-        style=discord.TextStyle.long,
+    ic_nickname = discord.ui.TextInput(
+        label="Игровой никнейм персонажа",
+        style=discord.TextStyle.short,
+        placeholder="Например: John Doe",
+        required=True,
         max_length=100,
-        required=False,
+    )
+
+    ooc_nickname = discord.ui.TextInput(
+        label="Ваш OOC никнейм",
+        style=discord.TextStyle.short,
+        placeholder="Например: JohnPlayer",
+        required=True,
+        max_length=100,
     )
 
     feedback = discord.ui.TextInput(
@@ -3220,14 +3228,6 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
         label="Форумный аккаунт (ps.ls-es.su)",
         style=discord.TextStyle.short,
         placeholder="Удостоверьтесь, что указали Discord в профиле",
-        required=True,
-        max_length=100,
-    )
-
-    vk = discord.ui.TextInput(
-        label="ВКонтакте",
-        style=discord.TextStyle.short,
-        placeholder="https://vk.com/...",
         required=True,
         max_length=100,
     )
@@ -3274,14 +3274,16 @@ class FeedbackModal(discord.ui.Modal, title="Получение роли"):
         created_at = self.user.created_at.strftime("%d.%m.%Y") if self.user.created_at else "Неизвестно"
 
         embed = discord.Embed(
-            title="Запрос ролей",
+            title="Новый запрос ролей",
             description=f"**От {self.user.mention} (ID: {self.user.id})**\n\n"
+            f"**{self.ic_nickname.label}**\n"
+            f"{self.ic_nickname.value}\n\n"
+            f"**{self.ooc_nickname.label}**\n"
+            f"{self.ooc_nickname.value}\n\n"
             f"**{self.feedback.label}**\n"
             f"{self.feedback.value}\n\n"
             f"**{self.forum.label}**\n"
-            f"{self.forum.value}\n\n"
-            f"**{self.vk.label}**\n"
-            f"{self.vk.value}",
+            f"{self.forum.value}",
             color=discord.Color.yellow(),
             timestamp=datetime.now(),
         )
