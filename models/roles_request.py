@@ -3288,10 +3288,14 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
 
         embed.add_field(name=self.ic_nickname.label, value=self.ic_nickname.value, inline=True)
         embed.add_field(name=self.ooc_nickname.label, value=self.ooc_nickname.value, inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
         embed.add_field(name=self.forum.label, value=self.forum.value, inline=False)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
         embed.add_field(name=self.feedback.label, value=self.feedback.value, inline=False)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
         embed.add_field(name="На сервере с", value=joined_at, inline=True)
         embed.add_field(name="Аккаунт создан", value=created_at, inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
         embed.add_field(name="Текущие роли", value=roles_text[:1024], inline=False)
 
         view = PersistentView(embed, self.user, self.bot, interaction.guild)
