@@ -2454,9 +2454,6 @@ class PresetEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=2)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Используем defer для предотвращения таймаута
-        await interaction.response.defer()
-
         # Проверяем, что за parent_view - CategoryContentView или PresetsManagementView
         if hasattr(self.parent_view, 'load_content'):
             # Это CategoryContentView (просмотр содержимого подкатегории)
@@ -2495,7 +2492,7 @@ class PresetEditView(discord.ui.View):
                 color=discord.Color.blue()
             )
 
-        await interaction.edit_original_response(embed=embed, view=self.parent_view)
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
 
 
 # ============== ИЗМЕНЕНИЕ КАТЕГОРИИ ПРЕСЕТА ==============
