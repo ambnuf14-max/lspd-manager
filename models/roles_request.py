@@ -3206,6 +3206,7 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
         placeholder="Например: John Doe",
         required=True,
         max_length=100,
+        row=0,
     )
 
     ooc_nickname = discord.ui.TextInput(
@@ -3214,6 +3215,7 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
         placeholder="Например: JohnPlayer",
         required=True,
         max_length=100,
+        row=0,
     )
 
     feedback = discord.ui.TextInput(
@@ -3225,7 +3227,7 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
     )
 
     forum = discord.ui.TextInput(
-        label="Форумный аккаунт (ps.ls-es.su)",
+        label="Форумный аккаунт (pd.ls-es.su)",
         style=discord.TextStyle.short,
         placeholder="Удостоверьтесь, что указали Discord в профиле",
         required=True,
