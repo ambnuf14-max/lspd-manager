@@ -3276,7 +3276,7 @@ class FeedbackModal(discord.ui.Modal, title="Новый запрос ролей"
         embed = discord.Embed(
             title="Новый запрос ролей",
             description=f"**От {self.user.mention} (ID: {self.user.id})**",
-            color=discord.Color.yellow(),
+            color=discord.Color.blue(),
             timestamp=datetime.now(),
         )
 
