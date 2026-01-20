@@ -236,6 +236,32 @@ async def setup_db(bot):
             END $$;
             """
         )
+        # Миграция: изменяем UNIQUE constraint с name на (name, category_id)
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                -- Удаляем старый UNIQUE constraint на name если он существует
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_name = 'role_presets'
+                    AND constraint_name = 'role_presets_name_key'
+                    AND constraint_type = 'UNIQUE'
+                ) THEN
+                    ALTER TABLE role_presets DROP CONSTRAINT role_presets_name_key;
+                END IF;
+
+                -- Добавляем новый UNIQUE constraint на (name, category_id) если его нет
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_name = 'role_presets'
+                    AND constraint_name = 'role_presets_name_category_key'
+                ) THEN
+                    ALTER TABLE role_presets ADD CONSTRAINT role_presets_name_category_key UNIQUE (name, category_id);
+                END IF;
+            END $$;
+            """
+        )
         # Добавляем стандартные причины если таблица пустая
         existing_reasons = await conn.fetchval("SELECT COUNT(*) FROM reject_reasons")
         if existing_reasons == 0:
