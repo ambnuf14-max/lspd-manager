@@ -1610,13 +1610,18 @@ class CategoryEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.parent_view.refresh_categories()
+        # Сначала отвечаем на interaction
         embed = discord.Embed(
             title="📁 Управление категориями",
-            description="Категории позволяют группировать пресеты.",
+            description="Загрузка...",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=self.parent_view)
+        await interaction.response.edit_message(content=None, embed=embed, view=None)
+
+        # Загружаем данные
+        await self.parent_view.refresh_categories()
+        embed.description = "Категории позволяют группировать пресеты."
+        await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
 
 class CategoryRenameModal(discord.ui.Modal, title="Редактировать категорию"):
@@ -1993,14 +1998,19 @@ class RejectReasonEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.parent_view.refresh_reasons()
+        # Сначала отвечаем на interaction
         embed = discord.Embed(
             title="📋 Настройка причин отказа",
-            description="Выберите причину для редактирования или создайте новую\n\n"
-                        "💡 **Подсказка:** Вы можете настроить текст сообщения, которое будет отправлено пользователю в ЛС",
+            description="Загрузка...",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+        await interaction.response.edit_message(embed=embed, view=None)
+
+        # Загружаем данные
+        await self.parent_view.refresh_reasons()
+        embed.description = "Выберите причину для редактирования или создайте новую\n\n" \
+                           "💡 **Подсказка:** Вы можете настроить текст сообщения, которое будет отправлено пользователю в ЛС"
+        await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
 class RejectReasonCreateModal(discord.ui.Modal, title="Добавить причину отказа"):
@@ -2442,13 +2452,18 @@ class PresetEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=2)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.parent_view.refresh_presets()
+        # Сначала отвечаем на interaction, чтобы не было таймаута
         embed = discord.Embed(
             title="⚙ Управление пресетами",
-            description="Выберите действие или пресет для редактирования",
+            description="Загрузка...",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+        await interaction.response.edit_message(embed=embed, view=None)
+
+        # Теперь загружаем данные
+        await self.parent_view.refresh_presets()
+        embed.description = "Выберите действие или пресет для редактирования"
+        await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
 # ============== ИЗМЕНЕНИЕ КАТЕГОРИИ ПРЕСЕТА ==============
@@ -2627,6 +2642,9 @@ class BackToPresetEditButton(discord.ui.Button):
         self.parent_view = parent_view
 
     async def callback(self, interaction: discord.Interaction):
+        # Сначала быстро отвечаем
+        await interaction.response.defer()
+
         # Перезагружаем данные пресета для актуальности
         async with self.bot.db_pool.acquire() as conn:
             updated_preset = await conn.fetchrow(
@@ -2641,7 +2659,7 @@ class BackToPresetEditButton(discord.ui.Button):
             )
 
         if not updated_preset:
-            await interaction.response.send_message("Пресет не найден.", ephemeral=True)
+            await interaction.edit_original_response(content="Пресет не найден.")
             return
 
         preset_dict = dict(updated_preset)
@@ -2667,7 +2685,7 @@ class BackToPresetEditButton(discord.ui.Button):
         embed.add_field(name="Категория", value=preset_dict.get('category_name') or "Без категории", inline=True)
         embed.add_field(name="ID", value=str(preset_dict['preset_id']), inline=True)
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.edit_original_response(embed=embed, view=view)
 
 
 # ============== ВЫБОР РОЛЕЙ ==============
