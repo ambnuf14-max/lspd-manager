@@ -209,10 +209,11 @@ class RanksUtility(commands.Cog):
 
                 # Создаём пресет для ранга
                 async with self.bot.db_pool.acquire() as conn:
-                    # Проверяем, существует ли уже пресет с таким названием
+                    # Проверяем, существует ли уже пресет с таким названием в этой категории
                     existing = await conn.fetchval(
-                        "SELECT preset_id FROM role_presets WHERE name = $1",
-                        rank_name
+                        "SELECT preset_id FROM role_presets WHERE name = $1 AND category_id = $2",
+                        rank_name,
+                        category_id
                     )
 
                     if existing:
