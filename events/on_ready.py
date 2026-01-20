@@ -70,9 +70,24 @@ async def restore_pending_views(bot, adm_channel_id):
 
         adm_channel = bot.get_channel(adm_channel_id)
         restored = 0
+        deleted = 0
 
         for row in rows:
             try:
+                # Проверяем существование сообщения на сервере
+                try:
+                    await adm_channel.fetch_message(row["message_id"])
+                except discord.NotFound:
+                    # Сообщение удалено, обновляем статус в БД
+                    async with bot.db_pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE requests SET status = 'deleted' WHERE message_id = $1",
+                            row["message_id"]
+                        )
+                    print(f"Сообщение {row['message_id']} удалено, статус обновлен в БД")
+                    deleted += 1
+                    continue
+
                 user = await bot.fetch_user(row["user_id"])
                 embed = discord.Embed.from_dict(json.loads(row["embed"]))
                 view = PersistentView(embed, user, bot, adm_channel.guild)
@@ -87,6 +102,8 @@ async def restore_pending_views(bot, adm_channel_id):
                 print(f"Ошибка восстановления view для сообщения {row['message_id']}: {e}")
 
         print(f"✅ Восстановлено {restored} views для pending запросов")
+        if deleted > 0:
+            print(f"🗑️ Обнаружено и помечено удаленными: {deleted} запросов")
 
     except Exception as e:
         print(f"Ошибка при восстановлении views: {e}")
