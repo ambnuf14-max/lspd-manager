@@ -1610,17 +1610,18 @@ class CategoryEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Сначала отвечаем на interaction
-        embed = discord.Embed(
-            title="📁 Управление категориями",
-            description="Загрузка...",
-            color=discord.Color.blue()
-        )
-        await interaction.response.edit_message(content=None, embed=embed, view=None)
+        # Используем defer для предотвращения таймаута
+        await interaction.response.defer()
 
         # Загружаем данные
         await self.parent_view.refresh_categories()
-        embed.description = "Категории позволяют группировать пресеты."
+
+        # Обновляем сообщение
+        embed = discord.Embed(
+            title="📁 Управление категориями",
+            description="Категории позволяют группировать пресеты.",
+            color=discord.Color.blue()
+        )
         await interaction.edit_original_response(content=None, embed=embed, view=self.parent_view)
 
 
@@ -1998,18 +1999,19 @@ class RejectReasonEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Сначала отвечаем на interaction
-        embed = discord.Embed(
-            title="📋 Настройка причин отказа",
-            description="Загрузка...",
-            color=discord.Color.blue()
-        )
-        await interaction.response.edit_message(embed=embed, view=None)
+        # Используем defer для предотвращения таймаута
+        await interaction.response.defer()
 
         # Загружаем данные
         await self.parent_view.refresh_reasons()
-        embed.description = "Выберите причину для редактирования или создайте новую\n\n" \
-                           "💡 **Подсказка:** Вы можете настроить текст сообщения, которое будет отправлено пользователю в ЛС"
+
+        # Обновляем сообщение
+        embed = discord.Embed(
+            title="📋 Настройка причин отказа",
+            description="Выберите причину для редактирования или создайте новую\n\n"
+                       "💡 **Подсказка:** Вы можете настроить текст сообщения, которое будет отправлено пользователю в ЛС",
+            color=discord.Color.blue()
+        )
         await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
@@ -2452,17 +2454,18 @@ class PresetEditView(discord.ui.View):
 
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.gray, row=2)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Сначала отвечаем на interaction, чтобы не было таймаута
+        # Используем defer для предотвращения таймаута
+        await interaction.response.defer()
+
+        # Загружаем данные
+        await self.parent_view.refresh_presets()
+
+        # Обновляем сообщение
         embed = discord.Embed(
             title="⚙ Управление пресетами",
-            description="Загрузка...",
+            description="Выберите действие или пресет для редактирования",
             color=discord.Color.blue()
         )
-        await interaction.response.edit_message(embed=embed, view=None)
-
-        # Теперь загружаем данные
-        await self.parent_view.refresh_presets()
-        embed.description = "Выберите действие или пресет для редактирования"
         await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
