@@ -184,7 +184,7 @@ class PresetCategorySelect(discord.ui.Select):
             if self.parent_category_id is None:
                 # Корневой уровень: категории + пресеты без категории
                 categories = await conn.fetch(
-                    "SELECT category_id, name FROM preset_categories WHERE parent_id IS NULL ORDER BY name"
+                    "SELECT category_id, name, emoji FROM preset_categories WHERE parent_id IS NULL ORDER BY name"
                 )
                 uncategorized = await conn.fetch(
                     "SELECT preset_id, name, description, emoji FROM role_presets WHERE category_id IS NULL ORDER BY sort_order NULLS LAST, name"
@@ -192,7 +192,7 @@ class PresetCategorySelect(discord.ui.Select):
             else:
                 # Уровень подкатегорий: подкатегории + пресеты этой категории
                 categories = await conn.fetch(
-                    "SELECT category_id, name FROM preset_categories WHERE parent_id = $1 ORDER BY name",
+                    "SELECT category_id, name, emoji FROM preset_categories WHERE parent_id = $1 ORDER BY name",
                     self.parent_category_id
                 )
                 uncategorized = await conn.fetch(
@@ -221,10 +221,18 @@ class PresetCategorySelect(discord.ui.Select):
 
         # Сначала показываем все категории (они не пагинируются)
         for cat in categories:
+            # Используем пользовательский эмодзи, если указан
+            emoji_str = cat.get('emoji')
+            emoji = "📁"
+            if emoji_str:
+                parsed_emoji = parse_emoji(emoji_str, self.guild)
+                if parsed_emoji:
+                    emoji = parsed_emoji
+
             options.append(discord.SelectOption(
                 label=cat['name'][:100],
                 value=f"cat_{cat['category_id']}",
-                emoji="📁"
+                emoji=emoji
             ))
 
         # Вычисляем offset и limit для пресетов с учетом категорий и кнопки "Назад"
@@ -894,16 +902,18 @@ class CategoryContentSelect(discord.ui.Select):
         for subcat in subcategories:
             emoji_str = subcat.get('emoji')
             emoji = "📂"
+            emoji_for_desc = "📂"
             if emoji_str:
                 parsed_emoji = parse_emoji(emoji_str)
                 if parsed_emoji:
                     emoji = parsed_emoji
+                    emoji_for_desc = str(parsed_emoji)
             subcats = subcat.get('subcategory_count', 0)
             presets_count = subcat.get('preset_count', 0)
             options.append(discord.SelectOption(
                 label=subcat['name'],
                 value=f"subcat_{subcat['category_id']}",
-                description=f"📂 Подкатегорий: {subcats} | Пресетов: {presets_count}",
+                description=f"{emoji_for_desc} Подкатегорий: {subcats} | Пресетов: {presets_count}",
                 emoji=emoji
             ))
 
@@ -1235,7 +1245,7 @@ class SelectParentCategoryView(discord.ui.View):
         """Загрузка корневых категорий"""
         async with self.bot.db_pool.acquire() as conn:
             categories = await conn.fetch(
-                "SELECT category_id, name FROM preset_categories WHERE parent_id IS NULL ORDER BY name"
+                "SELECT category_id, name, emoji FROM preset_categories WHERE parent_id IS NULL ORDER BY name"
             )
 
         if not categories:
@@ -1243,10 +1253,18 @@ class SelectParentCategoryView(discord.ui.View):
         else:
             options = []
             for cat in categories[:25]:
+                # Используем пользовательский эмодзи, если указан
+                emoji_str = cat.get('emoji')
+                emoji = "📁"
+                if emoji_str:
+                    parsed_emoji = parse_emoji(emoji_str)
+                    if parsed_emoji:
+                        emoji = parsed_emoji
+
                 options.append(discord.SelectOption(
                     label=cat['name'],
                     value=str(cat['category_id']),
-                    emoji="📁"
+                    emoji=emoji
                 ))
 
             select = ParentCategorySelect(options, self.bot, self.parent_view)
@@ -2035,7 +2053,7 @@ class SelectPresetCategoryForCreateView(discord.ui.View):
         async with self.bot.db_pool.acquire() as conn:
             categories = await conn.fetch(
                 """
-                SELECT c.category_id, c.name, c.parent_id, p.name as parent_name
+                SELECT c.category_id, c.name, c.parent_id, c.emoji, p.name as parent_name
                 FROM preset_categories c
                 LEFT JOIN preset_categories p ON c.parent_id = p.category_id
                 ORDER BY p.name NULLS FIRST, c.name
@@ -2073,10 +2091,18 @@ class PresetCategoryForCreateSelect(discord.ui.Select):
                 # Формируем название с учётом родителя
                 if cat['parent_name']:
                     label = f"{cat['parent_name']} → {cat['name']}"
-                    emoji = "📂"
+                    default_emoji = "📂"
                 else:
                     label = cat['name']
-                    emoji = "📁"
+                    default_emoji = "📁"
+
+                # Используем пользовательский эмодзи, если указан
+                emoji_str = cat.get('emoji')
+                emoji = default_emoji
+                if emoji_str:
+                    parsed_emoji = parse_emoji(emoji_str)
+                    if parsed_emoji:
+                        emoji = parsed_emoji
 
                 if len(label) > 100:
                     label = label[:97] + "..."
@@ -2323,7 +2349,7 @@ class ChangePresetCategoryView(discord.ui.View):
         async with self.bot.db_pool.acquire() as conn:
             categories = await conn.fetch(
                 """
-                SELECT c.category_id, c.name, c.parent_id, p.name as parent_name
+                SELECT c.category_id, c.name, c.parent_id, c.emoji, p.name as parent_name
                 FROM preset_categories c
                 LEFT JOIN preset_categories p ON c.parent_id = p.category_id
                 ORDER BY p.name NULLS FIRST, c.name
@@ -2360,10 +2386,18 @@ class ChangePresetCategorySelect(discord.ui.Select):
                 # Формируем название с учётом родителя
                 if cat['parent_name']:
                     label = f"{cat['parent_name']} → {cat['name']}"
-                    emoji = "📂"
+                    default_emoji = "📂"
                 else:
                     label = cat['name']
-                    emoji = "📁"
+                    default_emoji = "📁"
+
+                # Используем пользовательский эмодзи, если указан
+                emoji_str = cat.get('emoji')
+                emoji = default_emoji
+                if emoji_str:
+                    parsed_emoji = parse_emoji(emoji_str)
+                    if parsed_emoji:
+                        emoji = parsed_emoji
 
                 if len(label) > 100:
                     label = label[:97] + "..."

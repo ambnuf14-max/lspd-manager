@@ -93,7 +93,7 @@ class RanksUtility(commands.Cog):
         async with self.bot.db_pool.acquire() as conn:
             categories = await conn.fetch(
                 """
-                SELECT c.category_id, c.name, c.parent_id, p.name as parent_name
+                SELECT c.category_id, c.name, c.parent_id, c.emoji, p.name as parent_name
                 FROM preset_categories c
                 LEFT JOIN preset_categories p ON c.parent_id = p.category_id
                 ORDER BY p.name NULLS FIRST, c.name
@@ -114,14 +114,15 @@ class RanksUtility(commands.Cog):
         for cat in categories:
             cat_id = cat['category_id']
             cat_name = cat['name']
+            cat_emoji = cat.get('emoji') or ('📁' if cat['parent_id'] is None else '📂')
 
             if cat['parent_id'] is None:
                 # Корневая категория
-                root_cats.append(f"📁 **{cat_name}** (ID: `{cat_id}`)")
+                root_cats.append(f"{cat_emoji} **{cat_name}** (ID: `{cat_id}`)")
             else:
                 # Подкатегория
                 parent_name = cat['parent_name']
-                sub_cats.append(f"  📂 {parent_name} → **{cat_name}** (ID: `{cat_id}`)")
+                sub_cats.append(f"  {cat_emoji} {parent_name} → **{cat_name}** (ID: `{cat_id}`)")
 
         response = "📚 **Список категорий:**\n\n"
 
