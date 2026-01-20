@@ -2457,15 +2457,44 @@ class PresetEditView(discord.ui.View):
         # Используем defer для предотвращения таймаута
         await interaction.response.defer()
 
-        # Загружаем данные
-        await self.parent_view.refresh_presets()
+        # Проверяем, что за parent_view - CategoryContentView или PresetsManagementView
+        if hasattr(self.parent_view, 'load_content'):
+            # Это CategoryContentView (просмотр содержимого подкатегории)
+            await self.parent_view.load_content()
 
-        # Обновляем сообщение
-        embed = discord.Embed(
-            title="⚙ Управление пресетами",
-            description="Выберите действие или пресет для редактирования",
-            color=discord.Color.blue()
-        )
+            # Формируем заголовок с путем к категории
+            category = self.parent_view.category
+            emoji = category.get('emoji')
+            emoji_str = '📁'
+            if emoji:
+                parsed_emoji = parse_emoji(emoji, interaction.guild)
+                if parsed_emoji:
+                    emoji_str = str(parsed_emoji)
+
+            if category.get('parent_name'):
+                title = f"{emoji_str} {category['parent_name']} → {category['name']}"
+            else:
+                title = f"{emoji_str} {category['name']}"
+
+            # Подсчитываем актуальное количество
+            subcategory_count = len(self.parent_view.subcategories)
+            preset_count = len(self.parent_view.presets)
+
+            embed = discord.Embed(
+                title=title,
+                description=f"Подкатегорий: {subcategory_count} | Пресетов: {preset_count}\n\n"
+                            f"Выберите подкатегорию, пресет или действие",
+                color=discord.Color.blue()
+            )
+        else:
+            # Это PresetsManagementView (управление пресетами)
+            await self.parent_view.refresh_presets()
+            embed = discord.Embed(
+                title="⚙ Управление пресетами",
+                description="Выберите действие или пресет для редактирования",
+                color=discord.Color.blue()
+            )
+
         await interaction.edit_original_response(embed=embed, view=self.parent_view)
 
 
