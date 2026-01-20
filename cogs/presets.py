@@ -8,9 +8,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.config import PRESET_ADMIN_ROLE_ID
 from bot.logger import get_logger
-from models.roles_request import normalize_emoji_for_storage, CategoryManagementView, RejectReasonsManagementView
+from models.roles_request import normalize_emoji_for_storage, CategoryManagementView, RejectReasonsManagementView, is_preset_admin
 import json
 
 logger = get_logger('presets')
@@ -43,29 +42,13 @@ class PresetsV2(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def is_preset_admin(self, user: discord.Member) -> bool:
-        """Проверка прав на управление пресетами"""
-        if user.guild.owner_id == user.id:
-            return True
-
-        if PRESET_ADMIN_ROLE_ID:
-            try:
-                admin_role_id = int(PRESET_ADMIN_ROLE_ID)
-                admin_role = user.guild.get_role(admin_role_id)
-                if admin_role and admin_role in user.roles:
-                    return True
-            except (ValueError, TypeError):
-                pass
-
-        return False
-
     # Группа команд /preset
     preset_group = app_commands.Group(name="preset", description="Управление пресетами ролей")
 
     @preset_group.command(name="create", description="Создать новый пресет (откроет окно выбора)")
     async def preset_create(self, interaction: discord.Interaction):
         """Создать новый пресет через модальное окно"""
-        if not await self.is_preset_admin(interaction.user):
+        if not await is_preset_admin(interaction.user):
             await interaction.response.send_message(
                 "❌ У вас нет прав для управления пресетами.",
                 ephemeral=True
@@ -129,7 +112,7 @@ class PresetsV2(commands.Cog):
     @app_commands.describe(name="Название пресета для удаления")
     async def preset_delete(self, interaction: discord.Interaction, name: str):
         """Удаление пресета"""
-        if not await self.is_preset_admin(interaction.user):
+        if not await is_preset_admin(interaction.user):
             await interaction.response.send_message(
                 "❌ У вас нет прав для управления пресетами.",
                 ephemeral=True
@@ -410,7 +393,7 @@ class PresetsV2(commands.Cog):
     @app_commands.command(name="settings", description="Открыть меню настроек")
     async def settings(self, interaction: discord.Interaction):
         """Открыть меню настроек"""
-        if not await self.is_preset_admin(interaction.user):
+        if not await is_preset_admin(interaction.user):
             await interaction.response.send_message(
                 "❌ У вас нет прав для доступа к настройкам.",
                 ephemeral=True

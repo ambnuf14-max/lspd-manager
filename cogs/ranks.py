@@ -6,8 +6,8 @@ from discord import app_commands
 from discord.ext import commands
 from datetime import datetime
 
-from bot.config import PRESET_ADMIN_ROLE_ID
 from bot.logger import get_logger
+from models.roles_request import is_preset_admin
 
 logger = get_logger('ranks')
 
@@ -64,26 +64,10 @@ class RanksUtility(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def is_preset_admin(self, user: discord.Member) -> bool:
-        """Проверка прав на управление пресетами"""
-        if user.guild.owner_id == user.id:
-            return True
-
-        if PRESET_ADMIN_ROLE_ID:
-            try:
-                admin_role_id = int(PRESET_ADMIN_ROLE_ID)
-                admin_role = user.guild.get_role(admin_role_id)
-                if admin_role and admin_role in user.roles:
-                    return True
-            except (ValueError, TypeError):
-                pass
-
-        return False
-
     @app_commands.command(name="list_categories", description="Показать все категории с их ID")
     async def list_categories(self, interaction: discord.Interaction):
         """Показывает список всех категорий с ID для использования в bulk_create_ranks"""
-        if not await self.is_preset_admin(interaction.user):
+        if not await is_preset_admin(interaction.user):
             await interaction.response.send_message(
                 "❌ У вас нет прав для просмотра категорий.",
                 ephemeral=True
@@ -148,7 +132,7 @@ class RanksUtility(commands.Cog):
         start_index: int = 1
     ):
         """Массовое создание пресетов для всех рангов LSPD"""
-        if not await self.is_preset_admin(interaction.user):
+        if not await is_preset_admin(interaction.user):
             await interaction.response.send_message(
                 "❌ У вас нет прав для управления пресетами.",
                 ephemeral=True
@@ -271,7 +255,7 @@ class RanksUtility(commands.Cog):
     @app_commands.command(name="delete_all_ranks", description="Удалить все пресеты рангов LSPD из БД")
     async def delete_all_ranks(self, interaction: discord.Interaction):
         """Удаляет все пресеты рангов LSPD из базы данных"""
-        if not await self.is_preset_admin(interaction.user):
+        if not await is_preset_admin(interaction.user):
             await interaction.response.send_message(
                 "❌ У вас нет прав для управления пресетами.",
                 ephemeral=True

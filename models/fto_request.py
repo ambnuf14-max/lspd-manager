@@ -10,6 +10,49 @@ from bot.logger import get_logger
 logger = get_logger('fto')
 
 
+# ============== ОБЩИЕ УТИЛИТЫ ==============
+
+def remove_user_from_embed(embed: discord.Embed, user_name: str, field_name: str = None):
+    """
+    Удаляет пользователя из указанного поля Embed (или из всех полей, если field_name=None).
+
+    Args:
+        embed: Discord Embed объект
+        user_name: Имя пользователя для удаления
+        field_name: Название поля (None = искать во всех полях)
+    """
+    for field in embed.fields:
+        # Если указано конкретное поле - проверяем только его
+        if field_name is not None and field.name != field_name:
+            continue
+
+        # Если field_name=None, проверяем только поля очереди
+        if field_name is None and field.name not in ("Свободные FTO", "Стажеры в очереди"):
+            continue
+
+        if user_name not in field.value:
+            continue
+
+        names = [name.strip() for name in field.value.split("\n") if name.strip()]
+        if user_name in names:
+            names.remove(user_name)
+            new_value = (
+                "\n".join(names)
+                if names
+                else (
+                    "Нет FTO"
+                    if field.name == "Свободные FTO"
+                    else "Нет стажеров в очереди"
+                )
+            )
+            embed.set_field_at(
+                embed.fields.index(field),
+                name=field.name,
+                value=new_value,
+                inline=False,
+            )
+
+
 class FTOView(discord.ui.View):
     def __init__(self, bot, channel_id=None, message_id=None):
         super().__init__(timeout=None)
@@ -66,9 +109,7 @@ class FTOView(discord.ui.View):
                 field_name = (
                     "Свободные FTO" if entry["officer_id"] else "Стажеры в очереди"
                 )
-                await self.remove_user_from_embed(
-                    embed, entry["display_name"], field_name
-                )
+                remove_user_from_embed(embed, entry["display_name"], field_name)
                 await message.edit(embed=embed)
         except discord.NotFound:
             logger.warning(f"Сообщение {self.message_id} не найдено.")
@@ -104,36 +145,6 @@ class FTOView(discord.ui.View):
     @cleanup_task.before_loop
     async def before_cleanup_task(self):
         await self.bot.wait_until_ready()  # Ждём, пока бот будет готов
-
-    @staticmethod
-    async def remove_user_from_embed(
-        embed: discord.Embed, user_name: str, field_name: str
-    ):
-        """
-        Удаляет пользователя из указанного поля Embed.
-        """
-        for field in embed.fields:
-            if field.name == field_name:
-                names = [
-                    name.strip() for name in field.value.split("\n") if name.strip()
-                ]
-                if user_name in names:
-                    names.remove(user_name)
-                    new_value = (
-                        "\n".join(names)
-                        if names
-                        else (
-                            "Нет FTO"
-                            if field_name == "Свободные FTO"
-                            else "Нет стажеров в очереди"
-                        )
-                    )
-                    embed.set_field_at(
-                        embed.fields.index(field),
-                        name=field_name,
-                        value=new_value,
-                        inline=False,
-                    )
 
 
 # noinspection PyUnresolvedReferences
@@ -176,42 +187,44 @@ class EnterQueue(discord.ui.Button):
                 )
                 return
 
-            async with interaction.client.db_pool.acquire() as conn:
-                existing_entry = await conn.fetch(
-                    "SELECT * FROM queue WHERE (probationary_id = $1 OR officer_id = $2) AND finished_at IS NULL",
-                    interaction.user.id,
-                    interaction.user.id,
-                )
+            # Определяем тип пользователя
+            is_fto = fto_role in interaction.user.roles
 
-            if existing_entry:
-                await interaction.response.send_message(
-                    "❌ Вы уже в очереди.", ephemeral=True
-                )
-                return
-
+            # Используем одну транзакцию для проверки и вставки (предотвращает race condition)
             result = None
             async with interaction.client.db_pool.acquire() as conn:
-                if fto_role in interaction.user.roles:
-                    result = await conn.fetchrow(
-                        "INSERT INTO queue (officer_id, created_at, display_name) VALUES ($1, $2, $3) RETURNING "
-                        "queue_id",
+                async with conn.transaction():
+                    # Проверяем, есть ли уже в очереди (с блокировкой строк)
+                    existing_entry = await conn.fetchrow(
+                        "SELECT queue_id FROM queue WHERE (probationary_id = $1 OR officer_id = $1) AND finished_at IS NULL FOR UPDATE",
                         interaction.user.id,
-                        datetime.now(),
-                        interaction.user.display_name,
                     )
-                    logger.info(f"FTO {interaction.user.display_name} добавлен в очередь, queue_id={result['queue_id']}")
-                    field_name = "Свободные FTO"
 
-                elif intern_role in interaction.user.roles:
-                    result = await conn.fetchrow(
-                        "INSERT INTO queue (probationary_id, created_at, display_name) VALUES ($1, $2, $3) RETURNING "
-                        "queue_id",
-                        interaction.user.id,
-                        datetime.now(),
-                        interaction.user.display_name,
-                    )
-                    logger.info(f"Стажёр {interaction.user.display_name} добавлен в очередь, queue_id={result['queue_id']}")
-                    field_name = "Стажеры в очереди"
+                    if existing_entry:
+                        await interaction.response.send_message(
+                            "❌ Вы уже в очереди.", ephemeral=True
+                        )
+                        return
+
+                    # Вставляем запись в той же транзакции
+                    if is_fto:
+                        result = await conn.fetchrow(
+                            "INSERT INTO queue (officer_id, created_at, display_name) VALUES ($1, $2, $3) RETURNING queue_id",
+                            interaction.user.id,
+                            datetime.now(),
+                            interaction.user.display_name,
+                        )
+                        logger.info(f"FTO {interaction.user.display_name} добавлен в очередь, queue_id={result['queue_id']}")
+                        field_name = "Свободные FTO"
+                    else:
+                        result = await conn.fetchrow(
+                            "INSERT INTO queue (probationary_id, created_at, display_name) VALUES ($1, $2, $3) RETURNING queue_id",
+                            interaction.user.id,
+                            datetime.now(),
+                            interaction.user.display_name,
+                        )
+                        logger.info(f"Стажёр {interaction.user.display_name} добавлен в очередь, queue_id={result['queue_id']}")
+                        field_name = "Стажеры в очереди"
 
             # Проверяем наличие пары
             if fto_role in interaction.user.roles:
@@ -301,9 +314,7 @@ class EnterQueue(discord.ui.Button):
                         return False
 
             # Удаляем обоих из embed (если они там были)
-            await self.remove_user_from_embed(
-                embed, intern_entry["display_name"], "Стажеры в очереди"
-            )
+            remove_user_from_embed(embed, intern_entry["display_name"], "Стажеры в очереди")
 
             # Отправляем уведомления
             intern_user = interaction.guild.get_member(
@@ -360,9 +371,7 @@ class EnterQueue(discord.ui.Button):
                         return False
 
             # Удаляем FTO из embed
-            await self.remove_user_from_embed(
-                embed, fto_entry["display_name"], "Свободные FTO"
-            )
+            remove_user_from_embed(embed, fto_entry["display_name"], "Свободные FTO")
 
             # Отправляем уведомления
             fto_user = interaction.guild.get_member(fto_entry["officer_id"])
@@ -387,34 +396,6 @@ class EnterQueue(discord.ui.Button):
             logger.error(f"Ошибка при проверке наличия FTO для стажёра: {e}", exc_info=True)
             return False
 
-    @staticmethod
-    async def remove_user_from_embed(
-        embed: discord.Embed, user_name: str, field_name: str
-    ):
-        """Удаляет пользователя из указанного поля Embed"""
-        for field in embed.fields:
-            if field.name == field_name:
-                names = [
-                    name.strip() for name in field.value.split("\n") if name.strip()
-                ]
-                if user_name in names:
-                    names.remove(user_name)
-                    new_value = (
-                        "\n".join(names)
-                        if names
-                        else (
-                            "Нет FTO"
-                            if field_name == "Свободные FTO"
-                            else "Нет стажеров в очереди"
-                        )
-                    )
-                    embed.set_field_at(
-                        embed.fields.index(field),
-                        name=field_name,
-                        value=new_value,
-                        inline=False,
-                    )
-
 
 # noinspection PyUnresolvedReferences
 class LeaveButton(discord.ui.Button):
@@ -433,30 +414,32 @@ class LeaveButton(discord.ui.Button):
                 if interaction.message.embeds
                 else discord.Embed()
             )
+
+            # Используем одну транзакцию для всех операций
             async with interaction.client.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT queue_id FROM queue "
-                    "WHERE (probationary_id = $1 OR officer_id = $2) AND finished_at IS NULL",
-                    interaction.user.id,
-                    interaction.user.id,
-                )
-
-            if not rows:
-                await interaction.response.send_message(
-                    "❌ Вы не в очереди.", ephemeral=True
-                )
-                return
-
-            for row in rows:
-                queue_id = row["queue_id"]
-                async with interaction.client.db_pool.acquire() as conn:
-                    await conn.execute(
-                        "UPDATE queue SET finished_at = $1 WHERE queue_id = $2",
-                        datetime.now(),
-                        queue_id,
+                async with conn.transaction():
+                    rows = await conn.fetch(
+                        "SELECT queue_id FROM queue "
+                        "WHERE (probationary_id = $1 OR officer_id = $1) AND finished_at IS NULL FOR UPDATE",
+                        interaction.user.id,
                     )
 
-                await self.remove_user_from_embed(embed, interaction.user.display_name)
+                    if not rows:
+                        await interaction.response.send_message(
+                            "❌ Вы не в очереди.", ephemeral=True
+                        )
+                        return
+
+                    # Обновляем все записи в одной транзакции
+                    queue_ids = [row["queue_id"] for row in rows]
+                    await conn.execute(
+                        "UPDATE queue SET finished_at = $1 WHERE queue_id = ANY($2)",
+                        datetime.now(),
+                        queue_ids,
+                    )
+
+            # Удаляем пользователя из embed (используем общую функцию)
+            remove_user_from_embed(embed, interaction.user.display_name)
 
             await interaction.response.edit_message(embed=embed)
             await interaction.followup.send("👌 Вы покинули очередь.", ephemeral=True)
@@ -466,32 +449,3 @@ class LeaveButton(discord.ui.Button):
             await interaction.response.send_message(
                 "❌ Ошибка при обработке запроса.", ephemeral=True
             )
-
-    @staticmethod
-    async def remove_user_from_embed(embed: discord.Embed, user_name: str):
-        """
-        Удаляет пользователя из всех полей embed.
-        """
-        for field in embed.fields:
-            if user_name in field.value:
-                names = [
-                    name.strip() for name in field.value.split("\n") if name.strip()
-                ]
-                if user_name in names:
-                    names.remove(user_name)
-                    new_value = (
-                        "\n".join(names)
-                        if names
-                        else (
-                            "Нет FTO"
-                            if field.name == "Свободные FTO"
-                            else "Нет стажеров в очереди"
-                        )
-                    )
-                    embed.set_field_at(
-                        embed.fields.index(field),
-                        name=field.name,
-                        value=new_value,
-                        inline=False,
-                    )
-        # await interaction.response.send_message(f"Вы покинули очередь")
