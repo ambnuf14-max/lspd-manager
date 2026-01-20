@@ -663,7 +663,11 @@ class ConfirmPresetView(discord.ui.View):
 
         # Обновление embed
         self.embed.color = discord.Color.green()
-        footer_text = f"Роли выданы пользователем {interaction.user.display_name}"
+
+        if success_roles:
+            footer_text = f"{', '.join(success_roles)} выданы пользователем {interaction.user.display_name}"
+        else:
+            footer_text = f"Роли выданы пользователем {interaction.user.display_name}"
 
         if failed_roles:
             footer_text += f"\n⚠ Не удалось выдать: {', '.join(failed_roles)}"
