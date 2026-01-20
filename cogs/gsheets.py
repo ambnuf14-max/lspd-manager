@@ -8,6 +8,7 @@ from discord.ext import commands, tasks
 
 from bot.config import GSHEET_UPDATE_TIMES
 from events.update_gsheet import update_roles
+from models.roles_request import is_preset_admin
 
 
 class gSheets(commands.Cog):
@@ -52,8 +53,14 @@ class gSheets(commands.Cog):
         print("Ну вроде успешно обновил таблицу :-)!")
 
     @app_commands.command(name="update", description="Обновить роли в таблице")
-    @app_commands.checks.has_role("Discord Administrator")
     async def update(self, interaction: discord.Interaction):
+        if not await is_preset_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ У вас недостаточно прав для выполнения этой команды.",
+                ephemeral=True
+            )
+            return
+
         await interaction.response.defer(thinking=True, ephemeral=True)
         try:
             await update_roles(bot=self.bot)
@@ -67,16 +74,10 @@ class gSheets(commands.Cog):
 
     @update.error
     async def update_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.MissingRole):
-            await interaction.response.send_message(
-                "❌ У вас недостаточно прав для выполнения этой команды.",
-                ephemeral=True,
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при выполнении команды.", ephemeral=True
-            )
-            traceback.print_exception(type(error), error, error.__traceback__)
+        await interaction.response.send_message(
+            "❌ Произошла ошибка при выполнении команды.", ephemeral=True
+        )
+        traceback.print_exception(type(error), error, error.__traceback__)
 
 async def setup(bot):
     await bot.add_cog(gSheets(bot))

@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.fto_request import FTOView
+from models.roles_request import is_preset_admin
 
 
 class FTOCog(commands.Cog):
@@ -16,8 +17,14 @@ class FTOCog(commands.Cog):
         print("FTO Cog loaded")
 
     @app_commands.command(name="fto", description="Отправить сообщение об очереди ФТО")
-    @app_commands.checks.has_role("Discord Administrator")
     async def fto(self, interaction: discord.Interaction):
+        if not await is_preset_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ У вас недостаточно прав для выполнения этой команды.",
+                ephemeral=True
+            )
+            return
+
         await interaction.response.defer(thinking=True)
 
         try:
@@ -48,17 +55,11 @@ class FTOCog(commands.Cog):
             traceback.print_exception(type(e), e, e.__traceback__)  # Логируем ошибку
 
     @fto.error
-    async def search_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.MissingRole):
-            await interaction.response.send_message(
-                "❌ У вас недостаточно прав для выполнения этой команды.",
-                ephemeral=True,
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при выполнении команды.", ephemeral=True
-            )
-            traceback.print_exception(type(error), error, error.__traceback__)
+    async def fto_error(self, interaction: discord.Interaction, error):
+        await interaction.response.send_message(
+            "❌ Произошла ошибка при выполнении команды.", ephemeral=True
+        )
+        traceback.print_exception(type(error), error, error.__traceback__)
 
 async def setup(bot):
     await bot.add_cog(FTOCog(bot))

@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from bot.config import ADM_ROLES_CH
+from models.roles_request import is_preset_admin
 
 
 class SearchCog(commands.Cog):
@@ -16,20 +17,26 @@ class SearchCog(commands.Cog):
 
     @commands.command()
     async def sync(self, ctx) -> None:
-        if ctx.author.guild_permissions.administrator:
-            # Копируем глобальные команды в guild
-            self.bot.tree.copy_global_to(guild=ctx.guild)
-            fmt = await ctx.bot.tree.sync(guild=ctx.guild)
-            await ctx.send(f"Synced {len(fmt)} commands.")
-        else:
+        if not await is_preset_admin(ctx.author):
             await ctx.send("❌ У вас нет прав для выполнения этой команды.")
+            return
+        # Копируем глобальные команды в guild
+        self.bot.tree.copy_global_to(guild=ctx.guild)
+        fmt = await ctx.bot.tree.sync(guild=ctx.guild)
+        await ctx.send(f"Synced {len(fmt)} commands.")
 
     @app_commands.command(name="search", description="Поиск запросов пользователя")
     @app_commands.describe(member="Пользователь, которого нужно найти")
-    @app_commands.checks.has_role("Discord Administrator")
     async def search(
         self, interaction: discord.Interaction, member: discord.Member = None
     ):
+        if not await is_preset_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ У вас недостаточно прав для выполнения этой команды.",
+                ephemeral=True
+            )
+            return
+
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
@@ -97,16 +104,10 @@ class SearchCog(commands.Cog):
 
     @search.error
     async def search_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.MissingRole):
-            await interaction.response.send_message(
-                "❌ У вас недостаточно прав для выполнения этой команды.",
-                ephemeral=True,
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при выполнении команды.", ephemeral=True
-            )
-            traceback.print_exception(type(error), error, error.__traceback__)
+        await interaction.response.send_message(
+            "❌ Произошла ошибка при выполнении команды.", ephemeral=True
+        )
+        traceback.print_exception(type(error), error, error.__traceback__)
 
 async def setup(bot):
     await bot.add_cog(SearchCog(bot))
