@@ -211,8 +211,7 @@ class PresetCategorySelect(discord.ui.Select):
         if self.parent_category_id is not None:
             options.append(discord.SelectOption(
                 label="◀ Назад",
-                value="back",
-                emoji="↩"
+                value="back"
             ))
             back_option_count = 1
 
@@ -682,7 +681,7 @@ class SettingsMenuView(discord.ui.View):
 
     @discord.ui.button(label="Управление", style=discord.ButtonStyle.primary, emoji="📁", row=0)
     async def management_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = CategoryManagementView(self.bot, self)
+        view = CategoryManagementView(self.bot, self, interaction.guild)
         await view.refresh_categories()
 
         embed = discord.Embed(
@@ -715,10 +714,11 @@ class SettingsMenuView(discord.ui.View):
 class CategoryManagementView(discord.ui.View):
     """View для управления категориями пресетов"""
 
-    def __init__(self, bot, settings_menu_view):
+    def __init__(self, bot, settings_menu_view, guild):
         super().__init__(timeout=300)
         self.bot = bot
         self.settings_menu_view = settings_menu_view
+        self.guild = guild
         self.categories = []
 
     async def refresh_categories(self):
@@ -737,17 +737,18 @@ class CategoryManagementView(discord.ui.View):
             )
 
         self.clear_items()
-        self.add_item(CategoryManagementSelect(self.categories, self.bot, self))
+        self.add_item(CategoryManagementSelect(self.categories, self.bot, self, self.guild))
         self.add_item(BackToSettingsMenuButton(self.settings_menu_view))
 
 
 class CategoryManagementSelect(discord.ui.Select):
     """Select для управления категориями"""
 
-    def __init__(self, categories: list, bot, parent_view):
+    def __init__(self, categories: list, bot, parent_view, guild):
         self.categories_data = {str(c['category_id']): c for c in categories}
         self.bot = bot
         self.parent_view = parent_view
+        self.guild = guild
 
         options = [
             discord.SelectOption(
@@ -766,7 +767,7 @@ class CategoryManagementSelect(discord.ui.Select):
             emoji_str = cat.get('emoji')
             emoji = default_emoji
             if emoji_str:
-                parsed_emoji = parse_emoji(emoji_str)
+                parsed_emoji = parse_emoji(emoji_str, guild)
                 if parsed_emoji:
                     emoji = parsed_emoji
 
@@ -904,7 +905,7 @@ class CategoryContentSelect(discord.ui.Select):
             emoji = "📂"
             emoji_for_desc = "📂"
             if emoji_str:
-                parsed_emoji = parse_emoji(emoji_str)
+                parsed_emoji = parse_emoji(emoji_str, parent_view.guild)
                 if parsed_emoji:
                     emoji = parsed_emoji
                     emoji_for_desc = str(parsed_emoji)
@@ -928,7 +929,7 @@ class CategoryContentSelect(discord.ui.Select):
             emoji_str = preset.get('emoji')
             emoji = None
             if emoji_str:
-                parsed_emoji = parse_emoji(emoji_str)
+                parsed_emoji = parse_emoji(emoji_str, parent_view.guild)
                 if parsed_emoji:
                     emoji = parsed_emoji
 
@@ -1210,7 +1211,7 @@ class CreateCategoryTypeView(discord.ui.View):
     @discord.ui.button(label="Подкатегория", style=discord.ButtonStyle.primary, emoji="📂", row=0)
     async def sub_category(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Показываем выбор родительской категории
-        view = SelectParentCategoryView(self.bot, self.parent_view)
+        view = SelectParentCategoryView(self.bot, self.parent_view, interaction.guild)
         await view.load_root_categories()
 
         await interaction.response.edit_message(
@@ -1236,10 +1237,11 @@ class CreateCategoryTypeView(discord.ui.View):
 class SelectParentCategoryView(discord.ui.View):
     """View для выбора родительской категории"""
 
-    def __init__(self, bot, parent_view):
+    def __init__(self, bot, parent_view, guild):
         super().__init__(timeout=120)
         self.bot = bot
         self.parent_view = parent_view
+        self.guild = guild
 
     async def load_root_categories(self):
         """Загрузка корневых категорий"""
@@ -1257,7 +1259,7 @@ class SelectParentCategoryView(discord.ui.View):
                 emoji_str = cat.get('emoji')
                 emoji = "📁"
                 if emoji_str:
-                    parsed_emoji = parse_emoji(emoji_str)
+                    parsed_emoji = parse_emoji(emoji_str, self.guild)
                     if parsed_emoji:
                         emoji = parsed_emoji
 
@@ -2100,7 +2102,7 @@ class PresetCategoryForCreateSelect(discord.ui.Select):
                 emoji_str = cat.get('emoji')
                 emoji = default_emoji
                 if emoji_str:
-                    parsed_emoji = parse_emoji(emoji_str)
+                    parsed_emoji = parse_emoji(emoji_str, self.guild)
                     if parsed_emoji:
                         emoji = parsed_emoji
 
@@ -2356,7 +2358,7 @@ class ChangePresetCategoryView(discord.ui.View):
                 """
             )
 
-        self.add_item(ChangePresetCategorySelect(categories, self.preset, self.bot, self.parent_view))
+        self.add_item(ChangePresetCategorySelect(categories, self.preset, self.bot, self.parent_view, self.guild))
 
         # Кнопка "Убрать из категории"
         self.add_item(RemoveFromCategoryButton(self.preset, self.bot, self.parent_view))
@@ -2368,10 +2370,11 @@ class ChangePresetCategoryView(discord.ui.View):
 class ChangePresetCategorySelect(discord.ui.Select):
     """Select для изменения категории пресета"""
 
-    def __init__(self, categories: list, preset: dict, bot, parent_view):
+    def __init__(self, categories: list, preset: dict, bot, parent_view, guild):
         self.preset = preset
         self.bot = bot
         self.parent_view = parent_view
+        self.guild = guild
 
         options = []
 
@@ -2395,7 +2398,7 @@ class ChangePresetCategorySelect(discord.ui.Select):
                 emoji_str = cat.get('emoji')
                 emoji = default_emoji
                 if emoji_str:
-                    parsed_emoji = parse_emoji(emoji_str)
+                    parsed_emoji = parse_emoji(emoji_str, self.guild)
                     if parsed_emoji:
                         emoji = parsed_emoji
 
