@@ -583,6 +583,9 @@ class ConfirmPresetView(discord.ui.View):
     @discord.ui.button(label="Да", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Подтверждение применения пресета"""
+        # Немедленно подтверждаем получение взаимодействия
+        await interaction.response.defer()
+
         from bot.config import BASE_LSPD_ROLE_ID
 
         guild = interaction.guild
@@ -595,7 +598,7 @@ class ConfirmPresetView(discord.ui.View):
 
         if not member:
             logger.warning(f"Пользователь {self.user.display_name} ({self.user.id}) не найден на сервере")
-            await interaction.response.edit_message(content="Пользователь больше не на сервере.", view=None)
+            await interaction.edit_original_response(content="Пользователь больше не на сервере.", view=None)
             return
 
         # Получаем корневую категорию (отдел) для получения department_role_id
@@ -705,12 +708,13 @@ class ConfirmPresetView(discord.ui.View):
         if failed_roles:
             response_msg += f"\n\n⚠ Ошибки: {', '.join(failed_roles)}"
 
-        await interaction.response.edit_message(content=response_msg, view=None)
+        await interaction.edit_original_response(content=response_msg, view=None)
 
     @discord.ui.button(label="Нет", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Отмена применения пресета"""
-        await interaction.response.edit_message(content="Отменено.", view=None)
+        await interaction.response.defer()
+        await interaction.edit_original_response(content="Отменено.", view=None)
 
 
 # ============== КНОПКА НАСТРОЕК ==============
