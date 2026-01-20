@@ -228,7 +228,7 @@ class PresetCategorySelect(discord.ui.Select):
         back_option_count = 0
         if self.parent_category_id is not None:
             options.append(discord.SelectOption(
-                label="◀ Назад",
+                label="Назад",
                 value="back"
             ))
             back_option_count = 1

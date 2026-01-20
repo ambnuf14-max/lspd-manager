@@ -262,6 +262,14 @@ async def setup_db(bot):
             END $$;
             """
         )
+        # Миграция: удаляем описания у рангов LSPD (которые были созданы со стандартным описанием)
+        await conn.execute(
+            """
+            UPDATE role_presets
+            SET description = NULL
+            WHERE description LIKE 'Ранг LSPD:%'
+            """
+        )
         # Добавляем стандартные причины если таблица пустая
         existing_reasons = await conn.fetchval("SELECT COUNT(*) FROM reject_reasons")
         if existing_reasons == 0:
