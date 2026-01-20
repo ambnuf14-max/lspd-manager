@@ -472,8 +472,8 @@ class PresetCategorySelect(discord.ui.Select):
             )
 
             # Формируем сообщение со списком ролей
-            roles_list = '\n'.join(f"• {role_name}" for role_name in role_names)
-            message = f"Игроку будут выданы роли:\n\n{roles_list}"
+            roles_list = '\n'.join(f"— {role_name}" for role_name in role_names)
+            message = f"✅ Игроку будут выданы роли:\n\n{roles_list}"
 
             await interaction.response.send_message(
                 message,
