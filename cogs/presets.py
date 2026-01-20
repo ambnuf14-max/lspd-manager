@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from bot.config import PRESET_ADMIN_ROLE_ID
 from bot.logger import get_logger
-from models.roles_request import normalize_emoji_for_storage
+from models.roles_request import normalize_emoji_for_storage, CategoryManagementView, RejectReasonsManagementView
 import json
 
 logger = get_logger('presets')
@@ -407,6 +407,43 @@ class PresetsV2(commands.Cog):
                 ephemeral=True
             )
 
+    @app_commands.command(name="settings", description="Открыть меню настроек")
+    async def settings(self, interaction: discord.Interaction):
+        """Открыть меню настроек"""
+        if not await self.is_preset_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ У вас нет прав для доступа к настройкам.",
+                ephemeral=True
+            )
+            return
+
+        view = SettingsMenuSlashView(self.bot, interaction.guild)
+
+        embed = discord.Embed(
+            title="⚙️ Настройки системы управления ролями",
+            description="Выберите раздел для настройки:",
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="📁 Управление категориями",
+            value="Создание и редактирование категорий для организации пресетов",
+            inline=False
+        )
+
+        embed.add_field(
+            name="❌ Причины отказа",
+            value="Настройка шаблонов причин отказа и сообщений в ЛС",
+            inline=False
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=True
+        )
+        logger.info(f"Меню настроек открыто пользователем {interaction.user.display_name}")
+
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info("Presets V2 Cog загружен")
@@ -540,6 +577,44 @@ class PresetCreateModal(discord.ui.Modal, title="Создать пресет р�
                 f"Ошибка при создании пресета: {e}",
                 ephemeral=True
             )
+
+
+class SettingsMenuSlashView(discord.ui.View):
+    """Меню настроек для slash-команды /settings"""
+
+    def __init__(self, bot, guild):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild = guild
+
+    @discord.ui.button(label="Управление категориями", style=discord.ButtonStyle.primary, emoji="📁", row=0)
+    async def management_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = CategoryManagementView(self.bot, self, interaction.guild)
+        await view.refresh_categories()
+
+        embed = discord.Embed(
+            title="📁 Управление категориями и пресетами",
+            description="Категории позволяют группировать пресеты.\n"
+                        "Структура: **Категория → Подкатегория → Пресет**\n\n"
+                        "Выберите категорию для просмотра пресетов или создайте новую",
+            color=discord.Color.blue()
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    @discord.ui.button(label="Настройка причин отказа", style=discord.ButtonStyle.primary, emoji="❌", row=1)
+    async def reject_reasons_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = RejectReasonsManagementView(self.bot, self)
+        await view.refresh_reasons()
+
+        embed = discord.Embed(
+            title="📋 Настройка причин отказа",
+            description="Выберите причину для редактирования или создайте новую\n\n"
+                        "💡 **Подсказка:** Вы можете настроить текст сообщения, которое будет отправлено пользователю в ЛС",
+            color=discord.Color.blue()
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 async def setup(bot):
