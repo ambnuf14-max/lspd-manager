@@ -260,8 +260,8 @@ class PresetCategorySelect(discord.ui.Select):
         # Добавляем пресеты для текущей страницы
         presets_on_page = uncategorized[start_idx:end_idx]
         for preset in presets_on_page:
-            description = preset.get('description') or "Нет описания"
-            if len(description) > 100:
+            description = preset.get('description')
+            if description and len(description) > 100:
                 description = description[:97] + "..."
             emoji = parse_emoji(preset.get('emoji'), self.guild)
 
