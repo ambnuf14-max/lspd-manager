@@ -728,6 +728,7 @@ class CategoryManagementView(discord.ui.View):
             self.categories = await conn.fetch(
                 """
                 SELECT c.category_id, c.name, c.parent_id, c.emoji,
+                       NULL as parent_name,
                        (SELECT COUNT(*) FROM role_presets WHERE category_id = c.category_id) as preset_count,
                        (SELECT COUNT(*) FROM preset_categories WHERE parent_id = c.category_id) as subcategory_count
                 FROM preset_categories c
@@ -845,12 +846,14 @@ class CategoryContentView(discord.ui.View):
             # Загружаем подкатегории
             self.subcategories = await conn.fetch(
                 """
-                SELECT category_id, name, emoji, parent_id,
+                SELECT c.category_id, c.name, c.emoji, c.parent_id,
+                       p.name as parent_name,
                        (SELECT COUNT(*) FROM role_presets WHERE category_id = c.category_id) as preset_count,
                        (SELECT COUNT(*) FROM preset_categories WHERE parent_id = c.category_id) as subcategory_count
                 FROM preset_categories c
-                WHERE parent_id = $1
-                ORDER BY name
+                LEFT JOIN preset_categories p ON c.parent_id = p.category_id
+                WHERE c.parent_id = $1
+                ORDER BY c.name
                 """,
                 self.category['category_id']
             )
@@ -955,9 +958,23 @@ class CategoryContentSelect(discord.ui.Select):
         total_presets = len(presets)
         self.total_pages = (total_presets + max_options - 1) // max_options if total_presets > 0 else 1
 
-        placeholder = "Выберите подкатегорию или пресет..."
+        # Формируем placeholder с путем к текущей категории
+        current_category = parent_view.category
+        if current_category.get('parent_id') is None:
+            # Корневая категория
+            category_path = current_category['name']
+        else:
+            # Подкатегория - показываем путь: родитель -> категория
+            parent_name = current_category.get('parent_name', 'Категория')
+            category_path = f"{parent_name} → {current_category['name']}"
+
+        placeholder = category_path
         if self.total_pages > 1:
-            placeholder = f"Выберите подкатегорию или пресет... (Стр. {self.page + 1}/{self.total_pages})"
+            placeholder = f"{category_path} (Стр. {self.page + 1}/{self.total_pages})"
+
+        # Ограничиваем длину placeholder (Discord лимит 150 символов)
+        if len(placeholder) > 150:
+            placeholder = placeholder[:147] + "..."
 
         super().__init__(
             placeholder=placeholder,
@@ -992,8 +1009,13 @@ class CategoryContentSelect(discord.ui.Select):
                 parsed_emoji = parse_emoji(emoji, interaction.guild)
                 if parsed_emoji:
                     emoji_str = str(parsed_emoji)
+
+            # Формируем заголовок с путем
+            parent_name = subcat.get('parent_name', 'Категория')
+            title = f"{emoji_str} {parent_name} → {subcat['name']}"
+
             embed = discord.Embed(
-                title=f"{emoji_str} {subcat['name']}",
+                title=title,
                 description=f"Подкатегорий: {subcat.get('subcategory_count', 0)} | Пресетов: {subcat.get('preset_count', 0)}\n\n"
                             f"Выберите подкатегорию, пресет или действие",
                 color=discord.Color.blue()
