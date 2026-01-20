@@ -270,6 +270,33 @@ async def setup_db(bot):
             WHERE description LIKE 'Ранг LSPD:%'
             """
         )
+        # Миграция: добавляем колонки для напоминаний в requests
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'requests' AND column_name = 'last_reminder_at'
+                ) THEN
+                    ALTER TABLE requests ADD COLUMN last_reminder_at TIMESTAMP WITHOUT TIME ZONE;
+                END IF;
+            END $$;
+            """
+        )
+        await conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'requests' AND column_name = 'reminder_count'
+                ) THEN
+                    ALTER TABLE requests ADD COLUMN reminder_count INT DEFAULT 0;
+                END IF;
+            END $$;
+            """
+        )
         # Добавляем стандартные причины если таблица пустая
         existing_reasons = await conn.fetchval("SELECT COUNT(*) FROM reject_reasons")
         if existing_reasons == 0:

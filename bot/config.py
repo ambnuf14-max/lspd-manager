@@ -37,6 +37,11 @@ GSHEET_UPDATE_TIMES = [int(x) for x in os.getenv("GSHEET_UPDATE_TIMES", "6,12,18
 FTO_QUEUE_CLEANUP_HOURS = int(os.getenv("FTO_QUEUE_CLEANUP_HOURS", "3"))
 FTO_QUEUE_CHECK_MINUTES = int(os.getenv("FTO_QUEUE_CHECK_MINUTES", "1"))
 
+# ============ REMINDERS ============
+REMINDER_CHECK_MINUTES = int(os.getenv("REMINDER_CHECK_MINUTES", "5"))
+REMINDER_FIRST_HOURS = int(os.getenv("REMINDER_FIRST_HOURS", "2"))
+REMINDER_SECOND_HOURS = int(os.getenv("REMINDER_SECOND_HOURS", "6"))
+
 # ============ ENVIRONMENT ============
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
