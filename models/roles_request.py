@@ -993,18 +993,16 @@ class CategoryContentSelect(discord.ui.Select):
         for subcat in subcategories:
             emoji_str = subcat.get('emoji')
             emoji = "📂"
-            emoji_for_desc = "📂"
             if emoji_str:
                 parsed_emoji = parse_emoji(emoji_str, parent_view.guild)
                 if parsed_emoji:
                     emoji = parsed_emoji
-                    emoji_for_desc = str(parsed_emoji)
             subcats = subcat.get('subcategory_count', 0)
             presets_count = subcat.get('preset_count', 0)
             options.append(discord.SelectOption(
                 label=subcat['name'],
                 value=f"subcat_{subcat['category_id']}",
-                description=f"{emoji_for_desc} Подкатегорий: {subcats} | Пресетов: {presets_count}",
+                description=f"Подкатегорий: {subcats} | Пресетов: {presets_count}",
                 emoji=emoji
             ))
 
