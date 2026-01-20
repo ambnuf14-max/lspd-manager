@@ -663,7 +663,7 @@ class ConfirmPresetView(discord.ui.View):
 
         # Обновление embed
         self.embed.color = discord.Color.green()
-        footer_text = f"Пресет '{preset_name}' применен пользователем {interaction.user.display_name}"
+        footer_text = f"Роли выданы пользователем {interaction.user.display_name}"
 
         if failed_roles:
             footer_text += f"\n⚠ Не удалось выдать: {', '.join(failed_roles)}"
@@ -693,11 +693,13 @@ class ConfirmPresetView(discord.ui.View):
             pass
 
         # Обновление ephemeral сообщения
-        response_msg = f"Пресет '{preset_name}' применен для {self.user.display_name}!"
         if success_roles:
-            response_msg += f"\nВыдано: {', '.join(success_roles)}"
+            response_msg = f"Были выданы роли:\n{', '.join(success_roles)}"
+        else:
+            response_msg = "Ни одна роль не была выдана."
+
         if failed_roles:
-            response_msg += f"\nОшибки: {', '.join(failed_roles)}"
+            response_msg += f"\n\n⚠ Ошибки: {', '.join(failed_roles)}"
 
         await interaction.response.edit_message(content=response_msg, view=None)
 
