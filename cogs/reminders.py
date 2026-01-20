@@ -105,12 +105,12 @@ class RemindersCog(commands.Cog):
         if is_first_reminder:
             reminder_text = (
                 f"@here\n\n"
-                f"Неотработанный запрос на получение ролей. Прошло более {REMINDER_FIRST_HOURS} часов."
+                f"⏰ Неотработанный запрос на получение ролей. Прошло более {REMINDER_FIRST_HOURS} часов."
             )
         else:
             reminder_text = (
                 f"@here\n\n"
-                f"Неотработанный запрос на получение ролей. Прошло более {REMINDER_SECOND_HOURS} часов."
+                f"⏰ Неотработанный запрос на получение ролей. Прошло более {REMINDER_SECOND_HOURS} часов."
             )
 
         try:
