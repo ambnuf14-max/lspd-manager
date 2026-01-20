@@ -401,12 +401,23 @@ class PresetCategorySelect(discord.ui.Select):
                 )
                 return
 
+            # Импортируем базовую роль LSPD
+            from bot.config import BASE_LSPD_ROLE_ID
+
             # Собираем все роли, которые будут выданы
             all_role_ids = list(preset['role_ids'])  # Роли из пресета
 
             # Добавляем групповую роль ранга
             if preset.get('rank_group_role_id'):
                 all_role_ids.append(preset['rank_group_role_id'])
+
+            # Добавляем основную роль LSPD
+            if BASE_LSPD_ROLE_ID:
+                try:
+                    base_role_id = int(BASE_LSPD_ROLE_ID)
+                    all_role_ids.append(base_role_id)
+                except (ValueError, TypeError):
+                    pass
 
             # Получаем роль отдела из категории
             department_role_id = None
