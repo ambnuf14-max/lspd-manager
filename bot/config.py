@@ -45,6 +45,14 @@ REMINDER_SECOND_HOURS = int(os.getenv("REMINDER_SECOND_HOURS", "6"))
 # ============ ENVIRONMENT ============
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
+# ============ API GATEWAY ============
+API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:8000")
+API_GATEWAY_KEY = os.getenv("API_GATEWAY_KEY", "")
+
+# ============ TEAMSPEAK 3 ============
+TS3_SERVER_ADDRESS = os.getenv("TS3_SERVER_ADDRESS", "ts3.example.com")
+TS3_SERVER_PORT = int(os.getenv("TS3_SERVER_PORT", "9987"))
+
 # ============ FEATURES ============
 ENABLE_GSHEETS = os.getenv("ENABLE_GSHEETS", "false").lower() == "true"
 ENABLE_FTO_AUTO_MESSAGE = os.getenv("ENABLE_FTO_AUTO_MESSAGE", "false").lower() == "true"
