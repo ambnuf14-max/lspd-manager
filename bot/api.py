@@ -2,6 +2,7 @@ import asyncio
 from aiohttp import web
 import discord
 from bot.logger import get_logger
+from bot.config import API_SERVER_KEY
 
 logger = get_logger('api')
 
@@ -15,17 +16,39 @@ class APIServer:
         self.runner = None
         self._setup_routes()
 
+    def _check_api_key(self, request: web.Request) -> bool:
+        """Проверка API ключа из заголовка"""
+        # Если API_KEY не установлен, доступ открыт
+        if not API_SERVER_KEY:
+            return True
+
+        # Проверяем заголовок X-API-Key
+        api_key = request.headers.get('X-API-Key')
+        if not api_key:
+            # Также проверяем Authorization: Bearer token
+            auth_header = request.headers.get('Authorization')
+            if auth_header and auth_header.startswith('Bearer '):
+                api_key = auth_header[7:]
+
+        return api_key == API_SERVER_KEY
+
     def _setup_routes(self):
         """Настройка маршрутов API"""
-        self.app.router.add_get('/api/roles', self.get_roles)
+        self.app.router.add_post('/api/roles', self.get_roles)
 
     async def get_roles(self, request: web.Request):
         """
         Получить роли пользователя на сервере
 
-        Query параметры:
-        - guild_id: ID сервера Discord
-        - user_id: ID пользователя Discord
+        Method: POST
+        Headers:
+        - X-API-Key: API ключ (или Authorization: Bearer <key>)
+
+        Body (JSON):
+        {
+            "guild_id": "123456789",
+            "user_id": "987654321"
+        }
 
         Ответ:
         {
@@ -43,31 +66,48 @@ class APIServer:
         }
         """
         try:
-            # Получаем параметры запроса
-            guild_id = request.query.get('guild_id')
-            user_id = request.query.get('user_id')
+            # Проверка API ключа
+            if not self._check_api_key(request):
+                logger.warning(f"Unauthorized API request from {request.remote}")
+                return web.json_response({
+                    'success': False,
+                    'error': 'Invalid or missing API key'
+                }, status=401)
+
+            # Читаем JSON body
+            try:
+                data = await request.json()
+            except Exception as e:
+                return web.json_response({
+                    'success': False,
+                    'error': 'Invalid JSON body'
+                }, status=400)
+
+            # Получаем параметры из body
+            guild_id = data.get('guild_id')
+            user_id = data.get('user_id')
 
             # Валидация параметров
             if not guild_id:
                 return web.json_response({
                     'success': False,
-                    'error': 'guild_id parameter is required'
+                    'error': 'guild_id is required in request body'
                 }, status=400)
 
             if not user_id:
                 return web.json_response({
                     'success': False,
-                    'error': 'user_id parameter is required'
+                    'error': 'user_id is required in request body'
                 }, status=400)
 
-            # Конвертируем в int
+            # Конвертируем в int (поддерживаем и строки и числа)
             try:
                 guild_id = int(guild_id)
                 user_id = int(user_id)
-            except ValueError:
+            except (ValueError, TypeError):
                 return web.json_response({
                     'success': False,
-                    'error': 'guild_id and user_id must be valid integers'
+                    'error': 'guild_id and user_id must be valid integers or integer strings'
                 }, status=400)
 
             # Получаем guild

@@ -61,6 +61,7 @@ ENABLE_API_SERVER = os.getenv("ENABLE_API_SERVER", "true").lower() == "true"
 # ============ API SERVER ============
 API_SERVER_HOST = os.getenv("API_SERVER_HOST", "0.0.0.0")
 API_SERVER_PORT = int(os.getenv("API_SERVER_PORT", "8080"))
+API_SERVER_KEY = os.getenv("API_SERVER_KEY", "")
 
 
 # ============ VALIDATION ============
