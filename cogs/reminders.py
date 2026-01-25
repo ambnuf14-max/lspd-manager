@@ -17,10 +17,19 @@ logger = get_logger('reminders')
 class RemindersCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.reminder_task.start()
+        self._task_started = False
 
     def cog_unload(self):
-        self.reminder_task.cancel()
+        if self._task_started:
+            self.reminder_task.cancel()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Запуск задачи напоминаний после готовности бота."""
+        if not self._task_started:
+            self.reminder_task.start()
+            self._task_started = True
+            logger.info("Задача напоминаний запущена")
 
     @tasks.loop(minutes=REMINDER_CHECK_MINUTES)
     async def reminder_task(self):
@@ -29,14 +38,6 @@ class RemindersCog(commands.Cog):
             await self.check_pending_requests()
         except Exception as e:
             logger.error(f"Ошибка в задаче напоминаний: {e}", exc_info=True)
-
-    @reminder_task.before_loop
-    async def before_reminder_task(self):
-        """Ожидание готовности бота перед запуском задачи."""
-        try:
-            await self.bot.wait_until_ready()
-        except Exception as e:
-            logger.error(f"Ошибка при ожидании готовности бота: {e}", exc_info=True)
 
     async def check_pending_requests(self):
         """Проверяет все pending запросы и отправляет напоминания при необходимости."""
