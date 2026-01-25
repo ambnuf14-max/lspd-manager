@@ -32,10 +32,19 @@ class RemindersCog(commands.Cog):
 
     @reminder_task.before_loop
     async def before_reminder_task(self):
-        await self.bot.wait_until_ready()
+        """Ожидание готовности бота перед запуском задачи."""
+        try:
+            await self.bot.wait_until_ready()
+        except Exception as e:
+            logger.error(f"Ошибка при ожидании готовности бота: {e}", exc_info=True)
 
     async def check_pending_requests(self):
         """Проверяет все pending запросы и отправляет напоминания при необходимости."""
+        # Проверка наличия пула БД
+        if not hasattr(self.bot, 'db_pool') or self.bot.db_pool is None:
+            logger.warning("База данных еще не инициализирована, пропускаем проверку")
+            return
+
         channel = self.bot.get_channel(ADM_ROLES_CH)
         if not channel:
             logger.warning(f"Канал {ADM_ROLES_CH} не найден для напоминаний")

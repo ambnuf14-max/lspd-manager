@@ -13,10 +13,14 @@ from bot.config import (
     BOT_ACTIVITY_NAME,
     COMMAND_PREFIX,
     ENABLE_GSHEETS,
-    ENABLE_FTO_AUTO_MESSAGE
+    ENABLE_FTO_AUTO_MESSAGE,
+    ENABLE_API_SERVER,
+    API_SERVER_HOST,
+    API_SERVER_PORT
 )
 from bot.database import setup_db
 from bot.logger import get_logger
+from bot.api import APIServer
 from events.on_error import setup_on_error
 from events.on_member_update import setup_on_member_update
 from events.on_ready import setup_on_ready
@@ -70,11 +74,26 @@ async def main():
     await load_extensions()
     logger.info("Коги загружены")
 
+    # Запуск API сервера если включен
+    api_server = None
+    if ENABLE_API_SERVER:
+        try:
+            api_server = APIServer(bot, host=API_SERVER_HOST, port=API_SERVER_PORT)
+            await api_server.start()
+        except Exception as e:
+            logger.error(f"Не удалось запустить API сервер: {e}", exc_info=True)
+    else:
+        logger.info("API сервер отключен (ENABLE_API_SERVER=false)")
+
     logger.info("Запуск бота...")
     try:
         await bot.start(TOKEN)
     except Exception as e:
         logger.error(f"Ошибка при запуске бота: {e}", exc_info=True)
+    finally:
+        # Останавливаем API сервер при завершении
+        if api_server:
+            await api_server.stop()
 
 
 if __name__ == "__main__":

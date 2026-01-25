@@ -56,6 +56,11 @@ TS3_SERVER_PORT = int(os.getenv("TS3_SERVER_PORT", "9987"))
 # ============ FEATURES ============
 ENABLE_GSHEETS = os.getenv("ENABLE_GSHEETS", "false").lower() == "true"
 ENABLE_FTO_AUTO_MESSAGE = os.getenv("ENABLE_FTO_AUTO_MESSAGE", "false").lower() == "true"
+ENABLE_API_SERVER = os.getenv("ENABLE_API_SERVER", "true").lower() == "true"
+
+# ============ API SERVER ============
+API_SERVER_HOST = os.getenv("API_SERVER_HOST", "0.0.0.0")
+API_SERVER_PORT = int(os.getenv("API_SERVER_PORT", "8080"))
 
 
 # ============ VALIDATION ============
