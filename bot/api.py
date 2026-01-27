@@ -163,6 +163,7 @@ class APIServer:
                     'id': str(member.id),
                     'username': member.name,
                     'discriminator': member.discriminator,
+                    'nick': member.nick,
                     'display_name': member.display_name,
                     'avatar_url': str(member.display_avatar.url) if member.display_avatar else None
                 },
